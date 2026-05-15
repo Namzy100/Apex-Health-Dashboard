@@ -1,0 +1,11 @@
+{
+  "appId": "com.naman.apex",
+  "appName": "Apex",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "ios": {
+    "contentInset": "always"
+  }
+}

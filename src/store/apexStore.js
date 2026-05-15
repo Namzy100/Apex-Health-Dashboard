@@ -15,18 +15,19 @@ function defaultStore() {
   return {
     settings: {
       name: 'Naman',
-      startWeight: 185,
-      goalWeight: 165,
+      startWeight: 185,    // canonical: lbs
+      goalWeight: 165,     // canonical: lbs
       startDate: '2026-05-01',
       goalDate: '2026-08-31',
-      height: 71,
+      height: 71,          // canonical: inches
       dailyCalorieTarget: 2100,
       dailyProteinTarget: 180,
       dailyCarbTarget: 200,
       dailyFatTarget: 65,
       dailyStepTarget: 10000,
-      waterTarget: 3.5,
+      waterTarget: 3.5,    // canonical: oz (stored as L legacy; treat as-is)
       tdee: 2600,
+      units: 'imperial',   // 'imperial' | 'metric' — display only, does not change stored values
     },
     weightLogs: sampleWeights,
     foodLogs: {},

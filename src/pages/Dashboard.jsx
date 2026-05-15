@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useApexStore, getDailyTotals, getDailyCheckin, saveDailyCheckin } from '../store/apexStore';
 import { macroLogs } from '../data/sampleData';
+import { formatWeight } from '../utils/unitConversions';
 import { getContextualQuote, getContextualSubline } from '../data/motivationQuotes';
 import { getRecentMilestone, RARITY_META } from '../data/achievements';
 import { detectConsistencyStreak } from '../services/aiCoach';
@@ -123,8 +124,16 @@ export default function Dashboard() {
 
   const totals     = getDailyTotals(todayStr);
   const weightLogs = store.weightLogs || [];
-  const latestWeight = weightLogs[weightLogs.length - 1]?.weight || settings.startWeight;
-  const lost = ((settings.startWeight || 185) - latestWeight).toFixed(1);
+  const latestWeightLbs = weightLogs[weightLogs.length - 1]?.weight || settings.startWeight;
+  const lostLbs = (settings.startWeight || 185) - latestWeightLbs;
+
+  const units = settings.units || 'imperial';
+  const wtDisplay = formatWeight(latestWeightLbs, units);
+  const latestWeight = wtDisplay.value;
+  const weightUnitLabel = wtDisplay.unit;
+  const lost = units === 'metric'
+    ? (lostLbs * 0.453592).toFixed(1)
+    : lostLbs.toFixed(1);
 
   const todayMacros    = macroLogs[macroLogs.length - 1] || {};
   const todayCalories  = totals.calories > 0 ? totals.calories : (todayMacros.calories || 1850);
@@ -210,8 +219,8 @@ export default function Dashboard() {
           transition={{ delay: 0.2, duration: 0.5 }}
           className="absolute right-4 md:right-8 top-1/2 -translate-y-1/2 flex gap-2 md:gap-3">
           {[
-            { label: 'Days left', value: daysLeft,   color: '#f59e0b' },
-            { label: 'lbs lost',  value: `−${lost}`, color: '#10b981' },
+            { label: 'Days left',              value: daysLeft,  color: '#f59e0b' },
+            { label: `${weightUnitLabel} lost`, value: `−${lost}`, color: '#10b981' },
           ].map(s => (
             <div key={s.label} className="text-center px-3 py-2.5 md:px-5 md:py-4 rounded-2xl" style={{
               background: 'rgba(0,0,0,0.45)',
@@ -231,7 +240,7 @@ export default function Dashboard() {
 
         {/* ── Stat cards ── */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
-          <StatCard title="Weight"   value={latestWeight} unit="lbs" sub={`−${lost} lbs lost`}
+          <StatCard title="Weight"   value={latestWeight} unit={weightUnitLabel} sub={`−${lost} ${weightUnitLabel} lost`}
             icon={TrendingDown} iconColor="#f59e0b" sparkData={sparkWeightData} delay={0.05} />
           <StatCard title="Calories" value={todayCalories} unit="kcal" sub={`${remaining.calories} kcal left`}
             icon={Flame} iconColor="#f97316" barPct={(todayCalories / targets.calories) * 100} delay={0.1} />

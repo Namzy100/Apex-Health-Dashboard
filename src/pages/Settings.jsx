@@ -1,18 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Settings as SettingsIcon, User, Target, Database, Download,
   Trash2, Save, CheckCircle, BarChart2, RefreshCw, FileJson,
+  Smartphone, Globe, Loader2, ToggleLeft, ToggleRight,
 } from 'lucide-react';
 import { useApexStore, exportStoreAsJSON, exportWeightCSV, resetStore } from '../store/apexStore';
 import { useToast } from '../components/Toast';
-
-const API_KEYS = [
-  { label: 'USDA FoodData Central', env: 'VITE_USDA_API_KEY', desc: 'Free at fdc.nal.usda.gov/api-key-signup.html' },
-  { label: 'Nutritionix', env: 'VITE_NUTRITIONIX_API_KEY', desc: 'Restaurant + branded foods' },
-  { label: 'Spoonacular', env: 'VITE_SPOONACULAR_API_KEY', desc: 'Recipe database, free tier available' },
-  { label: 'OpenAI', env: 'VITE_OPENAI_API_KEY', desc: 'Powers AI logging and recipe builder' },
-];
 
 function SectionHeader({ icon: Icon, title, color = '#f59e0b' }) {
   return (
@@ -50,13 +44,81 @@ function Card({ children, delay = 0 }) {
   );
 }
 
+const API_LABELS = {
+  usda:        { label: 'USDA FoodData Central', desc: 'Free at fdc.nal.usda.gov', serverOnly: false },
+  spoonacular: { label: 'Spoonacular',           desc: 'Recipe database, free tier', serverOnly: false },
+  openai:      { label: 'OpenAI',                desc: 'Powers AI logging & recipe builder', serverOnly: true },
+  nutritionix: { label: 'Nutritionix',           desc: 'Restaurant + branded foods', serverOnly: false },
+};
+
+function ApiStatusRow({ key: _k, name, status, meta }) {
+  const isConnected = status === 'connected';
+  const isLoading   = status === 'loading';
+  const isError     = status === 'error';
+  return (
+    <div className="flex items-center justify-between p-3 rounded-xl"
+      style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="text-xs font-medium" style={{ color: '#a8a29e' }}>{meta.label}</p>
+          {meta.serverOnly && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold"
+              style={{ background: 'rgba(99,102,241,0.12)', color: '#818cf8' }}>server-only</span>
+          )}
+        </div>
+        <p className="text-[10px] mt-0.5" style={{ color: '#3d3a36' }}>{meta.desc}</p>
+      </div>
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full flex-shrink-0 ml-3"
+        style={{
+          background: isConnected ? 'rgba(16,185,129,0.1)' : isError ? 'rgba(239,68,68,0.08)' : 'rgba(255,255,255,0.04)',
+          border: `1px solid ${isConnected ? 'rgba(16,185,129,0.2)' : isError ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.08)'}`,
+        }}>
+        {isLoading
+          ? <Loader2 size={10} className="animate-spin" style={{ color: '#57534e' }} />
+          : <div className="w-1.5 h-1.5 rounded-full"
+              style={{ background: isConnected ? '#10b981' : isError ? '#ef4444' : '#57534e' }} />}
+        <span className="text-xs" style={{ color: isConnected ? '#10b981' : isError ? '#ef4444' : '#57534e' }}>
+          {isLoading ? 'Checking…' : isConnected ? 'Connected' : isError ? 'Error' : 'Not set'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function Settings() {
   const [store, update] = useApexStore();
   const [saved, setSaved] = useState(false);
+  const [apiStatus, setApiStatus] = useState({
+    usda: 'loading', spoonacular: 'loading', openai: 'loading', nutritionix: 'loading',
+  });
+  const [apiError, setApiError] = useState(false);
   const toast = useToast();
 
   const settings = store.settings;
   const set = (key) => (val) => update(s => ({ ...s, settings: { ...s.settings, [key]: val } }));
+
+  // Fetch API status from backend — OpenAI key is checked server-side only
+  const fetchApiStatus = async () => {
+    setApiStatus({ usda: 'loading', spoonacular: 'loading', openai: 'loading', nutritionix: 'loading' });
+    setApiError(false);
+    try {
+      const res = await fetch('/api/status');
+      if (!res.ok) throw new Error('Server unreachable');
+      const data = await res.json();
+      setApiStatus(data);
+    } catch {
+      // Server not running — fall back to client-side VITE_ checks only, mark openai as unknown
+      setApiError(true);
+      setApiStatus({
+        usda:        import.meta.env.VITE_USDA_API_KEY        ? 'connected' : 'missing',
+        spoonacular: import.meta.env.VITE_SPOONACULAR_API_KEY ? 'connected' : 'missing',
+        openai:      'unknown',
+        nutritionix: import.meta.env.VITE_NUTRITIONIX_API_KEY ? 'connected' : 'missing',
+      });
+    }
+  };
+
+  useEffect(() => { fetchApiStatus(); }, []);
 
   const handleSave = () => {
     setSaved(true);
@@ -73,11 +135,14 @@ export default function Settings() {
   };
 
   const handleExportJSON = () => { exportStoreAsJSON(); toast('JSON backup downloaded', 'success'); };
-  const handleExportCSV = () => { exportWeightCSV(); toast('Weight CSV downloaded', 'success'); };
+  const handleExportCSV  = () => { exportWeightCSV();   toast('Weight CSV downloaded',  'success'); };
 
-  const handleLoadSample = () => {
-    toast('Sample data is already loaded on first launch', 'info');
-  };
+  const isMetric   = settings.units === 'metric';
+  const toggleUnits = () => set('units')(isMetric ? 'imperial' : 'metric');
+
+  // Detect if running as installed PWA
+  const isPWA = window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true;
 
   return (
     <div style={{ minHeight: '100vh', background: '#111010' }}>
@@ -99,26 +164,57 @@ export default function Settings() {
         <Card delay={0.05}>
           <SectionHeader icon={User} title="Profile & Identity" />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               <Field label="Your Name" value={settings.name} onChange={set('name')} />
             </div>
             <Field label="Start Date" value={settings.startDate} onChange={set('startDate')} type="date" />
-            <Field label="Goal Date" value={settings.goalDate} onChange={set('goalDate')} type="date" />
-            <Field label="Height" value={settings.height} onChange={set('height')} type="number" unit="inches" />
+            <Field label="Goal Date"  value={settings.goalDate}  onChange={set('goalDate')}  type="date" />
+            <Field label="Height (inches)" value={settings.height} onChange={set('height')} type="number" unit="in" />
+          </div>
+        </Card>
+
+        {/* Unit system */}
+        <Card delay={0.08}>
+          <SectionHeader icon={Globe} title="Measurement System" color="#6366f1" />
+          <p className="text-xs mb-4" style={{ color: '#57534e' }}>
+            Display-only — all data stays in canonical imperial internally (lbs, oz, miles, inches).
+            Switching to Metric converts values on screen without changing stored data.
+          </p>
+          <div className="flex items-center justify-between p-3 rounded-xl"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div>
+              <p className="text-sm font-semibold" style={{ color: '#f5f4f2' }}>
+                {isMetric ? 'Metric' : 'Imperial'}
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: '#57534e' }}>
+                {isMetric ? 'kg · cm · ml · km' : 'lbs · in · oz · mi'}
+              </p>
+            </div>
+            <button onClick={toggleUnits} className="flex-shrink-0 min-touch">
+              {isMetric
+                ? <ToggleRight size={32} style={{ color: '#6366f1' }} />
+                : <ToggleLeft  size={32} style={{ color: '#57534e' }} />}
+            </button>
           </div>
         </Card>
 
         {/* Weight Goals */}
         <Card delay={0.1}>
           <SectionHeader icon={Target} title="Weight Goals" color="#10b981" />
+          <p className="text-xs mb-3" style={{ color: '#57534e' }}>
+            Always stored in <strong style={{ color: '#a8a29e' }}>lbs</strong>.
+            {isMetric && ' Displayed in kg on all other pages.'}
+          </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Start Weight" value={settings.startWeight} onChange={set('startWeight')} type="number" unit="lbs" />
-            <Field label="Goal Weight" value={settings.goalWeight} onChange={set('goalWeight')} type="number" unit="lbs" />
+            <Field label="Start Weight (lbs)" value={settings.startWeight} onChange={set('startWeight')} type="number" unit="lbs" />
+            <Field label="Goal Weight (lbs)"  value={settings.goalWeight}  onChange={set('goalWeight')}  type="number" unit="lbs" />
           </div>
           {settings.startWeight && settings.goalWeight && (
             <div className="mt-3 p-3 rounded-xl" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.15)' }}>
               <p className="text-xs" style={{ color: '#10b981' }}>
-                Goal: lose <strong>{(settings.startWeight - settings.goalWeight).toFixed(1)} lbs</strong> by {settings.goalDate || '—'}
+                Goal: lose <strong>{(settings.startWeight - settings.goalWeight).toFixed(1)} lbs</strong>
+                {isMetric && ` (${((settings.startWeight - settings.goalWeight) * 0.453592).toFixed(1)} kg)`}
+                {' '}by {settings.goalDate || '—'}
               </p>
             </div>
           )}
@@ -128,19 +224,18 @@ export default function Settings() {
         <Card delay={0.15}>
           <SectionHeader icon={BarChart2} title="Daily Nutrition Targets" color="#6366f1" />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Calories" value={settings.dailyCalorieTarget} onChange={set('dailyCalorieTarget')} type="number" unit="kcal" />
-            <Field label="Protein" value={settings.dailyProteinTarget} onChange={set('dailyProteinTarget')} type="number" unit="g" hint="~1g per lb bodyweight" />
-            <Field label="Carbs" value={settings.dailyCarbTarget} onChange={set('dailyCarbTarget')} type="number" unit="g" />
-            <Field label="Fat" value={settings.dailyFatTarget} onChange={set('dailyFatTarget')} type="number" unit="g" />
-            <Field label="Daily Steps" value={settings.dailyStepTarget} onChange={set('dailyStepTarget')} type="number" unit="steps" />
-            <Field label="Water" value={settings.waterTarget} onChange={set('waterTarget')} type="number" unit="L" />
-            <Field label="TDEE (Maintenance)" value={settings.tdee} onChange={set('tdee')} type="number" unit="kcal" hint="Used for deficit calculation" />
+            <Field label="Calories"           value={settings.dailyCalorieTarget} onChange={set('dailyCalorieTarget')} type="number" unit="kcal" />
+            <Field label="Protein"            value={settings.dailyProteinTarget} onChange={set('dailyProteinTarget')} type="number" unit="g" hint="~1g per lb bodyweight" />
+            <Field label="Carbs"              value={settings.dailyCarbTarget}    onChange={set('dailyCarbTarget')}    type="number" unit="g" />
+            <Field label="Fat"                value={settings.dailyFatTarget}     onChange={set('dailyFatTarget')}     type="number" unit="g" />
+            <Field label="Daily Steps"        value={settings.dailyStepTarget}    onChange={set('dailyStepTarget')}    type="number" unit="steps" />
+            <Field label="TDEE (Maintenance)" value={settings.tdee}              onChange={set('tdee')}               type="number" unit="kcal" hint="Used for deficit calculation" />
           </div>
         </Card>
 
         {/* Save button */}
         <button onClick={handleSave}
-          className="w-full rounded-2xl py-3.5 text-sm font-semibold flex items-center justify-center gap-2 transition-all"
+          className="w-full rounded-2xl py-3.5 text-sm font-semibold flex items-center justify-center gap-2 transition-all min-touch"
           style={{
             background: saved ? 'rgba(16,185,129,0.15)' : 'linear-gradient(135deg, #f59e0b, #f97316)',
             color: saved ? '#10b981' : '#000',
@@ -151,58 +246,92 @@ export default function Settings() {
 
         {/* API Status */}
         <Card delay={0.2}>
-          <SectionHeader icon={Database} title="API & Integration Status" color="#38bdf8" />
-          <p className="text-xs mb-4" style={{ color: '#57534e' }}>
-            Add these keys to a <code className="px-1 rounded" style={{ background: 'rgba(255,255,255,0.06)', color: '#a8a29e' }}>.env.local</code> file in your project root to unlock external food databases.
+          <div className="flex items-center justify-between mb-4">
+            <SectionHeader icon={Database} title="API & Integration Status" color="#38bdf8" />
+            <button onClick={fetchApiStatus}
+              className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg transition-opacity hover:opacity-80"
+              style={{ background: 'rgba(255,255,255,0.05)', color: '#57534e' }}>
+              <RefreshCw size={11} />Refresh
+            </button>
+          </div>
+          {apiError && (
+            <div className="mb-3 px-3 py-2 rounded-xl text-xs" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.15)', color: '#a8896e' }}>
+              API server not running. Start it with <code className="px-1 rounded" style={{ background: 'rgba(255,255,255,0.06)' }}>npm run server</code>.
+              OpenAI status unknown until server is up.
+            </div>
+          )}
+          <p className="text-xs mb-3" style={{ color: '#57534e' }}>
+            Add keys to <code className="px-1 rounded" style={{ background: 'rgba(255,255,255,0.06)', color: '#a8a29e' }}>.env.local</code>.
+            <span style={{ color: '#818cf8' }}> Server-only</span> keys are never exposed in the browser.
           </p>
           <div className="space-y-2">
-            {API_KEYS.map(api => {
-              const isSet = !!import.meta.env[api.env];
-              return (
-                <div key={api.env} className="flex items-center justify-between p-3 rounded-xl"
-                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div>
-                    <p className="text-xs font-medium" style={{ color: '#a8a29e' }}>{api.label}</p>
-                    <p className="text-[10px] mt-0.5" style={{ color: '#3d3a36' }}>{api.desc}</p>
-                  </div>
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full flex-shrink-0"
-                    style={{
-                      background: isSet ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.04)',
-                      border: `1px solid ${isSet ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.08)'}`,
-                    }}>
-                    <div className="w-1.5 h-1.5 rounded-full" style={{ background: isSet ? '#10b981' : '#57534e' }} />
-                    <span className="text-xs" style={{ color: isSet ? '#10b981' : '#57534e' }}>{isSet ? 'Connected' : 'Not set'}</span>
-                  </div>
+            {Object.entries(API_LABELS).map(([key, meta]) => (
+              <ApiStatusRow key={key} name={key} status={apiStatus[key] ?? 'loading'} meta={meta} />
+            ))}
+          </div>
+        </Card>
+
+        {/* App Mode */}
+        <Card delay={0.25}>
+          <SectionHeader icon={Smartphone} title="App Mode" color="#10b981" />
+          <div className="space-y-2">
+            {[
+              {
+                label: 'Web App',
+                active: !isPWA,
+                desc: 'Running in browser. Add to home screen to install as app.',
+                color: '#f59e0b',
+              },
+              {
+                label: isPWA ? 'Installed PWA ✓' : 'Installable PWA',
+                active: isPWA,
+                desc: isPWA
+                  ? 'Running as installed app. Offline capable.'
+                  : 'Open in Safari → Share → Add to Home Screen to install.',
+                color: '#10b981',
+              },
+              {
+                label: 'Native iOS App (Coming Soon)',
+                active: false,
+                desc: 'Future: Capacitor build for App Store. Config ready at capacitor.config.json.',
+                color: '#6366f1',
+              },
+            ].map(m => (
+              <div key={m.label} className="flex items-start gap-3 p-3 rounded-xl"
+                style={{
+                  background: m.active ? `${m.color}08` : 'rgba(255,255,255,0.02)',
+                  border: `1px solid ${m.active ? `${m.color}20` : 'rgba(255,255,255,0.05)'}`,
+                }}>
+                <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0"
+                  style={{ background: m.active ? m.color : '#3d3835' }} />
+                <div>
+                  <p className="text-xs font-semibold" style={{ color: m.active ? '#f5f4f2' : '#57534e' }}>{m.label}</p>
+                  <p className="text-[10px] mt-0.5 leading-relaxed" style={{ color: '#3d3a36' }}>{m.desc}</p>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         </Card>
 
         {/* Data Management */}
-        <Card delay={0.25}>
+        <Card delay={0.3}>
           <SectionHeader icon={Download} title="Data & Export" color="#a78bfa" />
           <p className="text-xs mb-4" style={{ color: '#57534e' }}>
             All data is stored locally in your browser. Nothing is sent to a server.
           </p>
           <div className="grid grid-cols-2 gap-2">
             <button onClick={handleExportJSON}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all"
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all min-touch"
               style={{ background: 'rgba(167,139,250,0.1)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.18)' }}>
-              <FileJson size={13} />Export JSON Backup
+              <FileJson size={13} />Export JSON
             </button>
             <button onClick={handleExportCSV}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all"
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all min-touch"
               style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.18)' }}>
-              <Download size={13} />Export Weight CSV
-            </button>
-            <button onClick={handleLoadSample}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all"
-              style={{ background: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.18)' }}>
-              <RefreshCw size={13} />Reload Sample Data
+              <Download size={13} />Weight CSV
             </button>
             <button onClick={handleClearAll}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all"
+              className="col-span-2 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all min-touch"
               style={{ background: 'rgba(239,68,68,0.08)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.15)' }}>
               <Trash2 size={13} />Clear All Data
             </button>
@@ -211,7 +340,7 @@ export default function Settings() {
 
         {/* Branding footer */}
         <div className="text-center py-4">
-          <p className="text-xs" style={{ color: '#3d3835' }}>Apex Personal OS · Built for Naman · Summer 2026</p>
+          <p className="text-xs" style={{ color: '#3d3835' }}>Apex Personal OS · Summer 2026</p>
           <p className="text-xs mt-0.5" style={{ color: '#292524' }}>Your transformation. Your data. Your rules.</p>
         </div>
       </div>
