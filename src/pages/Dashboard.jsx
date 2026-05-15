@@ -9,7 +9,9 @@ import {
   Flame, Target, Footprints, TrendingDown, Camera,
   Check, Zap, Sun, ChefHat, ChevronRight, Maximize2,
   X, Scale, Utensils, Download, Plus, BarChart3,
-  ArrowRight, Droplets, Trophy, Activity,
+  ArrowRight, Trophy, Activity,
+  CheckSquare, NotebookPen, CalendarDays, Circle,
+  ChevronDown, ChevronUp, PenLine,
 } from 'lucide-react';
 import {
   useApexStore, getDailyTotals, getDailyCheckin, saveDailyCheckin,
@@ -19,7 +21,12 @@ import { macroLogs } from '../data/sampleData';
 import { formatWeight } from '../utils/unitConversions';
 import { getContextualQuote, getContextualSubline } from '../data/motivationQuotes';
 import { getRecentMilestone, RARITY_META } from '../data/achievements';
-import { detectConsistencyStreak } from '../services/aiCoach';
+import {
+  detectConsistencyStreak,
+  analyzeHabitsPatterns,
+  analyzeGoalsProgress,
+  analyzeJournal,
+} from '../services/aiCoach';
 import AICoachCard from '../components/AICoachCard';
 import DailyTimeline from '../components/DailyTimeline';
 import FocusMode from '../components/FocusMode';
@@ -34,35 +41,42 @@ const GAME_PLAN = [
 
 const DONUT_COLORS = ['#f59e0b', '#10b981', '#3b82f6'];
 
-// ─── Bottom Sheet ─────────────────────────────────────────────────────────────
+const CATEGORY_COLORS = {
+  fitness: '#f59e0b', nutrition: '#ef4444', health: '#10b981',
+  recovery: '#8b5cf6', growth: '#a78bfa', wellness: '#06b6d4', custom: '#78716c',
+};
+
+const MOOD_MAP = {
+  great: { emoji: '🔥', label: 'On fire',  color: '#f59e0b' },
+  good:  { emoji: '😊', label: 'Good',      color: '#10b981' },
+  okay:  { emoji: '😐', label: 'Okay',      color: '#78716c' },
+  tired: { emoji: '😴', label: 'Tired',     color: '#8b5cf6' },
+  rough: { emoji: '😤', label: 'Rough',     color: '#ef4444' },
+};
+
+// ─── BottomSheet ──────────────────────────────────────────────────────────────
 
 function BottomSheet({ open, onClose, title, emoji, children }) {
   return (
     <AnimatePresence>
       {open && (
         <>
-          <motion.div
-            key="bd"
+          <motion.div key="bd"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             className="fixed inset-0 z-50"
             style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
-            onClick={onClose}
-          />
-          <motion.div
-            key="sh"
+            onClick={onClose} />
+          <motion.div key="sh"
             initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
             transition={{ type: 'spring', stiffness: 340, damping: 34, mass: 0.9 }}
             className="fixed bottom-0 left-0 right-0 z-50"
-            style={{ maxHeight: '88svh' }}
-          >
+            style={{ maxHeight: '88svh' }}>
             <div className="rounded-t-3xl flex flex-col overflow-hidden"
               style={{ background: '#1c1a18', border: '1px solid rgba(255,255,255,0.1)', maxHeight: '88svh', boxShadow: '0 -24px 80px rgba(0,0,0,0.6)' }}>
-              {/* Drag handle */}
               <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
                 <div className="w-10 h-1 rounded-full" style={{ background: 'rgba(255,255,255,0.18)' }} />
               </div>
-              {/* Header */}
               <div className="flex items-center justify-between px-5 py-3 flex-shrink-0"
                 style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
                 <div className="flex items-center gap-2.5">
@@ -75,10 +89,7 @@ function BottomSheet({ open, onClose, title, emoji, children }) {
                   <X size={14} style={{ color: '#78716c' }} />
                 </motion.button>
               </div>
-              {/* Scrollable content */}
-              <div className="overflow-y-auto flex-1 p-5 pb-sheet">
-                {children}
-              </div>
+              <div className="overflow-y-auto flex-1 p-5 pb-sheet">{children}</div>
             </div>
           </motion.div>
         </>
@@ -87,7 +98,7 @@ function BottomSheet({ open, onClose, title, emoji, children }) {
   );
 }
 
-// ─── Macro bar (shared) ───────────────────────────────────────────────────────
+// ─── Shared MacroBar ──────────────────────────────────────────────────────────
 
 function MacroBar({ label, current, target, color }) {
   const pct = Math.min((current / (target || 1)) * 100, 100);
@@ -105,7 +116,7 @@ function MacroBar({ label, current, target, color }) {
   );
 }
 
-// ─── Stat Card ────────────────────────────────────────────────────────────────
+// ─── StatCard ─────────────────────────────────────────────────────────────────
 
 function StatCard({ title, value, unit, sub, icon: Icon, iconColor, sparkData, barPct, ring, delay, onTap }) {
   return (
@@ -115,18 +126,9 @@ function StatCard({ title, value, unit, sub, icon: Icon, iconColor, sparkData, b
       whileTap={{ scale: 0.96 }}
       transition={{ delay: delay ?? 0, duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
       className="rounded-2xl p-4 flex flex-col gap-2 relative overflow-hidden text-left w-full"
-      style={{
-        background: 'rgba(255,255,255,0.04)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: '0 1px 0 rgba(255,255,255,0.04) inset',
-        cursor: onTap ? 'pointer' : 'default',
-      }}>
+      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 1px 0 rgba(255,255,255,0.04) inset', cursor: onTap ? 'pointer' : 'default' }}>
       <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)' }} />
-      {onTap && (
-        <div className="absolute top-3 right-3">
-          <ChevronRight size={12} style={{ color: '#3d3835' }} />
-        </div>
-      )}
+      {onTap && <div className="absolute top-3 right-3"><ChevronRight size={12} style={{ color: '#3d3835' }} /></div>}
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0 pr-2">
           <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: '#57534e', letterSpacing: '0.06em' }}>{title}</p>
@@ -181,13 +183,13 @@ function StatCard({ title, value, unit, sub, icon: Icon, iconColor, sparkData, b
   );
 }
 
-// ─── Quick Actions ────────────────────────────────────────────────────────────
+// ─── Quick Action Button ──────────────────────────────────────────────────────
 
 function QuickActionBtn({ icon: Icon, label, color, onClick }) {
   return (
     <motion.button whileTap={{ scale: 0.91 }} onClick={onClick}
-      className="flex flex-col items-center gap-1.5 flex-shrink-0 min-touch"
-      style={{ width: 72 }}>
+      className="flex flex-col items-center gap-1.5 flex-shrink-0"
+      style={{ width: 68 }}>
       <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
         style={{ background: `${color}18`, border: `1px solid ${color}28` }}>
         <Icon size={20} style={{ color }} />
@@ -197,12 +199,63 @@ function QuickActionBtn({ icon: Icon, label, color, onClick }) {
   );
 }
 
-// ─── Quick Log Weight Sheet ───────────────────────────────────────────────────
+// ─── Collapsible Section Wrapper (mobile-friendly) ────────────────────────────
+
+function CollapsibleSection({ title, icon: Icon, iconColor = '#f59e0b', badge, defaultOpen = true, delay = 0, children, onOpenAll }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+      transition={{ delay, duration: 0.4 }}
+      className="rounded-2xl overflow-hidden relative"
+      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)' }} />
+      <button
+        className="w-full flex items-center justify-between px-4 py-3.5"
+        onClick={() => setOpen(o => !o)}>
+        <div className="flex items-center gap-2.5">
+          <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
+            style={{ background: `${iconColor}18` }}>
+            <Icon size={13} style={{ color: iconColor }} />
+          </div>
+          <span className="text-sm font-bold" style={{ color: '#f5f4f2' }}>{title}</span>
+          {badge && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold"
+              style={{ background: `${iconColor}20`, color: iconColor }}>{badge}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {onOpenAll && open && (
+            <button onClick={e => { e.stopPropagation(); onOpenAll(); }}
+              className="text-[10px] flex items-center gap-0.5"
+              style={{ color: iconColor }}>
+              Open all <ChevronRight size={9} />
+            </button>
+          )}
+          {open
+            ? <ChevronUp size={14} style={{ color: '#3d3a36' }} />
+            : <ChevronDown size={14} style={{ color: '#3d3a36' }} />}
+        </div>
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: 'easeInOut' }}>
+            <div className="px-4 pb-4 pt-0">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+// ─── Log Weight Sheet ─────────────────────────────────────────────────────────
 
 function LogWeightSheet({ open, onClose }) {
   const [val, setVal] = useState('');
   const [saved, setSaved] = useState(false);
-
   const handleSave = () => {
     const w = parseFloat(val);
     if (!w || w < 50 || w > 500) return;
@@ -210,27 +263,17 @@ function LogWeightSheet({ open, onClose }) {
     setSaved(true);
     setTimeout(() => { setSaved(false); setVal(''); onClose(); }, 900);
   };
-
   return (
     <BottomSheet open={open} onClose={onClose} title="Log Weight" emoji="⚖️">
       <p className="text-xs mb-4" style={{ color: '#57534e' }}>Enter today's weight in lbs (imperial)</p>
-      <input
-        type="number"
-        inputMode="decimal"
-        value={val}
-        onChange={e => setVal(e.target.value)}
+      <input type="number" inputMode="decimal" value={val} onChange={e => setVal(e.target.value)}
         placeholder="e.g. 178.5"
         className="w-full rounded-2xl px-4 py-4 text-2xl font-bold text-center outline-none mb-4"
         style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#f5f4f2' }}
-        autoFocus
-      />
-      <motion.button whileTap={{ scale: 0.97 }} onClick={handleSave}
-        disabled={!val || saved}
+        autoFocus />
+      <motion.button whileTap={{ scale: 0.97 }} onClick={handleSave} disabled={!val || saved}
         className="w-full py-4 rounded-2xl text-sm font-bold flex items-center justify-center gap-2"
-        style={{
-          background: saved ? 'rgba(16,185,129,0.2)' : val ? 'linear-gradient(135deg, #f59e0b, #f97316)' : 'rgba(255,255,255,0.06)',
-          color: saved ? '#10b981' : val ? '#000' : '#3d3835',
-        }}>
+        style={{ background: saved ? 'rgba(16,185,129,0.2)' : val ? 'linear-gradient(135deg, #f59e0b, #f97316)' : 'rgba(255,255,255,0.06)', color: saved ? '#10b981' : val ? '#000' : '#3d3835' }}>
         {saved ? <><Check size={16} />Saved!</> : 'Save Weight'}
       </motion.button>
     </BottomSheet>
@@ -247,10 +290,8 @@ function WeightDetailSheet({ open, onClose, weightLogs, settings, units }) {
   const toGoLbs = Math.max(0, latestLbs - goalLbs);
   const pct = Math.min(100, Math.round((lostLbs / ((settings.startWeight || 185) - goalLbs)) * 100));
   const sparkData = weightLogs.slice(-14).map(d => ({ v: d.weight, date: d.date.slice(5) }));
-
   return (
     <BottomSheet open={open} onClose={onClose} title="Weight Progress" emoji="⚖️">
-      {/* Big stat */}
       <div className="grid grid-cols-3 gap-3 mb-5">
         {[
           { label: 'Current', val: formatWeight(latestLbs, units).value, unit: formatWeight(latestLbs, units).unit, color: '#f59e0b' },
@@ -264,8 +305,6 @@ function WeightDetailSheet({ open, onClose, weightLogs, settings, units }) {
           </div>
         ))}
       </div>
-
-      {/* Progress to goal */}
       <div className="mb-5">
         <div className="flex justify-between mb-1.5">
           <span className="text-xs" style={{ color: '#78716c' }}>Progress to goal</span>
@@ -276,8 +315,6 @@ function WeightDetailSheet({ open, onClose, weightLogs, settings, units }) {
             initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.8 }} />
         </div>
       </div>
-
-      {/* Mini chart */}
       {sparkData.length > 1 && (
         <div className="mb-5 rounded-2xl p-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <p className="text-[10px] uppercase tracking-wider mb-2 font-semibold" style={{ color: '#57534e' }}>Last 14 days</p>
@@ -298,7 +335,6 @@ function WeightDetailSheet({ open, onClose, weightLogs, settings, units }) {
           </div>
         </div>
       )}
-
       <motion.button whileTap={{ scale: 0.97 }} onClick={() => { onClose(); navigate('/weight'); }}
         className="w-full py-3.5 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2"
         style={{ background: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.2)' }}>
@@ -308,21 +344,19 @@ function WeightDetailSheet({ open, onClose, weightLogs, settings, units }) {
   );
 }
 
-// ─── Calories Detail Sheet ────────────────────────────────────────────────────
+// ─── Calories Sheet ───────────────────────────────────────────────────────────
 
 function CaloriesSheet({ open, onClose, totals, targets, donutData, donutTotal }) {
   const navigate = useNavigate();
   const remaining = Math.max(0, targets.calories - totals.calories);
   const pct = Math.min(100, Math.round((totals.calories / targets.calories) * 100));
-
   return (
     <BottomSheet open={open} onClose={onClose} title="Today's Calories" emoji="🔥">
       <div className="flex items-center gap-4 mb-5">
         <div style={{ width: 100, height: 100, flexShrink: 0 }}>
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
-              <Pie data={donutData} dataKey="cal" cx="50%" cy="50%"
-                innerRadius={32} outerRadius={46} strokeWidth={0} startAngle={90} endAngle={-270}>
+              <Pie data={donutData} dataKey="cal" cx="50%" cy="50%" innerRadius={32} outerRadius={46} strokeWidth={0} startAngle={90} endAngle={-270}>
                 {donutData.map((_, i) => <Cell key={i} fill={DONUT_COLORS[i]} />)}
               </Pie>
             </PieChart>
@@ -331,19 +365,14 @@ function CaloriesSheet({ open, onClose, totals, targets, donutData, donutTotal }
         <div className="flex-1">
           <p className="text-3xl font-black" style={{ color: '#f97316' }}>{totals.calories}</p>
           <p className="text-xs mt-0.5" style={{ color: '#57534e' }}>of {targets.calories} kcal target</p>
-          <p className="text-sm font-semibold mt-2" style={{ color: remaining > 200 ? '#10b981' : '#f59e0b' }}>
-            {remaining} kcal remaining
-          </p>
+          <p className="text-sm font-semibold mt-2" style={{ color: remaining > 200 ? '#10b981' : '#f59e0b' }}>{remaining} kcal remaining</p>
         </div>
       </div>
-
       <div className="space-y-3 mb-5">
         <MacroBar label="Protein" current={totals.protein} target={targets.protein} color="#f59e0b" />
         <MacroBar label="Carbs"   current={totals.carbs}   target={targets.carbs}   color="#10b981" />
         <MacroBar label="Fat"     current={totals.fat}     target={targets.fat}     color="#3b82f6" />
       </div>
-
-      {/* Macro % breakdown */}
       <div className="grid grid-cols-3 gap-2 mb-5">
         {donutData.map((d, i) => (
           <div key={d.name} className="rounded-xl p-2.5 text-center"
@@ -353,7 +382,6 @@ function CaloriesSheet({ open, onClose, totals, targets, donutData, donutTotal }
           </div>
         ))}
       </div>
-
       <motion.button whileTap={{ scale: 0.97 }} onClick={() => { onClose(); navigate('/food'); }}
         className="w-full py-3.5 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2"
         style={{ background: 'rgba(249,115,22,0.1)', color: '#f97316', border: '1px solid rgba(249,115,22,0.2)' }}>
@@ -372,8 +400,8 @@ function MacrosSheet({ open, onClose, totals, targets }) {
       <div className="grid grid-cols-3 gap-3 mb-5">
         {[
           { label: 'Protein', val: totals.protein, target: targets.protein, color: '#f59e0b', unit: 'g' },
-          { label: 'Carbs', val: totals.carbs, target: targets.carbs, color: '#10b981', unit: 'g' },
-          { label: 'Fat', val: totals.fat, target: targets.fat, color: '#3b82f6', unit: 'g' },
+          { label: 'Carbs',   val: totals.carbs,   target: targets.carbs,   color: '#10b981', unit: 'g' },
+          { label: 'Fat',     val: totals.fat,     target: targets.fat,     color: '#3b82f6', unit: 'g' },
         ].map(m => (
           <div key={m.label} className="rounded-2xl p-3 text-center"
             style={{ background: `${m.color}10`, border: `1px solid ${m.color}20` }}>
@@ -403,9 +431,8 @@ function MacrosSheet({ open, onClose, totals, targets }) {
 function StepsSheet({ open, onClose, steps }) {
   const navigate = useNavigate();
   const goal = 10000;
-  const pct = Math.min(100, Math.round((steps / goal) * 100));
+  const pct  = Math.min(100, Math.round((steps / goal) * 100));
   const circ = 2 * Math.PI * 52;
-
   return (
     <BottomSheet open={open} onClose={onClose} title="Activity" emoji="👟">
       <div className="flex flex-col items-center mb-6">
@@ -437,12 +464,10 @@ function StepsSheet({ open, onClose, steps }) {
 
 function StreakSheet({ open, onClose, streak, weightLogs }) {
   const last14 = Array.from({ length: 14 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (13 - i));
+    const d = new Date(); d.setDate(d.getDate() - (13 - i));
     const key = d.toISOString().slice(0, 10);
     return { key, logged: !!weightLogs.find(l => l.date === key), day: d.toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 1) };
   });
-
   return (
     <BottomSheet open={open} onClose={onClose} title="Consistency Streak" emoji="🔥">
       <div className="text-center mb-5">
@@ -469,11 +494,10 @@ function StreakSheet({ open, onClose, streak, weightLogs }) {
   );
 }
 
-// ─── Fullscreen Chart Sheet ───────────────────────────────────────────────────
+// ─── Full Chart Sheet ─────────────────────────────────────────────────────────
 
 function FullChartSheet({ open, onClose, weightLogs }) {
   const data = weightLogs.slice(-30).map(d => ({ date: d.date.slice(5), weight: d.weight }));
-
   return (
     <BottomSheet open={open} onClose={onClose} title="Weight Trend" emoji="📈">
       <p className="text-xs mb-3" style={{ color: '#57534e' }}>Last 30 days</p>
@@ -488,10 +512,7 @@ function FullChartSheet({ open, onClose, weightLogs }) {
             </defs>
             <XAxis dataKey="date" tick={{ fill: '#3d3835', fontSize: 10 }} axisLine={false} tickLine={false} interval={4} />
             <YAxis domain={['auto', 'auto']} tick={{ fill: '#3d3835', fontSize: 10 }} axisLine={false} tickLine={false} />
-            <Tooltip
-              contentStyle={{ background: '#1a1714', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 10, color: '#f5f4f2', fontSize: 12 }}
-              labelStyle={{ color: '#78716c' }}
-            />
+            <Tooltip contentStyle={{ background: '#1a1714', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 10, color: '#f5f4f2', fontSize: 12 }} labelStyle={{ color: '#78716c' }} />
             <Area type="monotone" dataKey="weight" stroke="#f59e0b" strokeWidth={2.5} fill="url(#wGradFS)" dot={false} activeDot={{ r: 5, fill: '#f59e0b', strokeWidth: 0 }} />
           </AreaChart>
         </ResponsiveContainer>
@@ -503,33 +524,32 @@ function FullChartSheet({ open, onClose, weightLogs }) {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const [store] = useApexStore();
+  const [store, update] = useApexStore();
   const navigate = useNavigate();
   const todayStr = new Date().toISOString().slice(0, 10);
 
-  const [focusOpen, setFocusOpen]   = useState(false);
-  const [activeSheet, setActiveSheet] = useState(null); // 'weight' | 'logweight' | 'calories' | 'macros' | 'steps' | 'streak' | 'chart'
-  const [checkin, setCheckin]       = useState(() => getDailyCheckin(todayStr));
+  const [focusOpen,   setFocusOpen]   = useState(false);
+  const [activeSheet, setActiveSheet] = useState(null);
+  const [checkin,     setCheckin]     = useState(() => getDailyCheckin(todayStr));
   const gamePlan = checkin.gamePlan || {};
 
   const settings = store.settings || {};
-  const targets = {
+  const targets  = {
     calories: settings.dailyCalorieTarget || 2100,
     protein:  settings.dailyProteinTarget || 180,
     carbs:    settings.dailyCarbTarget    || 200,
     fat:      settings.dailyFatTarget     || 65,
   };
 
-  const totals     = getDailyTotals(todayStr);
-  const weightLogs = store.weightLogs || [];
+  const totals          = getDailyTotals(todayStr);
+  const weightLogs      = store.weightLogs || [];
   const latestWeightLbs = weightLogs[weightLogs.length - 1]?.weight || settings.startWeight;
-  const lostLbs = (settings.startWeight || 185) - latestWeightLbs;
-
-  const units = settings.units || 'imperial';
-  const wtDisplay = formatWeight(latestWeightLbs, units);
-  const latestWeight = wtDisplay.value;
+  const lostLbs         = (settings.startWeight || 185) - latestWeightLbs;
+  const units           = settings.units || 'imperial';
+  const wtDisplay       = formatWeight(latestWeightLbs, units);
+  const latestWeight    = wtDisplay.value;
   const weightUnitLabel = wtDisplay.unit;
-  const lost = units === 'metric' ? (lostLbs * 0.453592).toFixed(1) : lostLbs.toFixed(1);
+  const lost            = units === 'metric' ? (lostLbs * 0.453592).toFixed(1) : lostLbs.toFixed(1);
 
   const todayMacros    = macroLogs[macroLogs.length - 1] || {};
   const todayCalories  = totals.calories > 0 ? totals.calories : (todayMacros.calories || 1850);
@@ -538,10 +558,9 @@ export default function Dashboard() {
   const todayFat       = totals.fat      > 0 ? totals.fat      : (todayMacros.fat      || 50);
   const steps          = todayMacros.steps || 7843;
 
-  const displayTotals = { calories: todayCalories, protein: todayProtein, carbs: todayCarbs, fat: todayFat };
-
-  const sparkWeightData  = weightLogs.slice(-10).map(d => ({ v: d.weight }));
-  const weeklyAvgCal     = Math.round(macroLogs.slice(-7).reduce((s, d) => s + d.calories, 0) / 7);
+  const displayTotals   = { calories: todayCalories, protein: todayProtein, carbs: todayCarbs, fat: todayFat };
+  const sparkWeightData = weightLogs.slice(-10).map(d => ({ v: d.weight }));
+  const weeklyAvgCal    = Math.round(macroLogs.slice(-7).reduce((s, d) => s + d.calories, 0) / 7);
   const weeklyAvgProtein = Math.round(macroLogs.slice(-7).reduce((s, d) => s + (d.protein || 0), 0) / 7);
 
   const donutData = [
@@ -551,13 +570,31 @@ export default function Dashboard() {
   ];
   const donutTotal = donutData.reduce((s, d) => s + d.cal, 0) || 1;
 
-  const goalDate   = new Date((settings.goalDate || '2026-08-31') + 'T12:00:00');
-  const daysLeft   = Math.max(0, Math.ceil((goalDate - new Date()) / 86400000));
-  const remaining  = { calories: Math.max(0, targets.calories - todayCalories), protein: Math.max(0, targets.protein - todayProtein) };
+  const goalDate       = new Date((settings.goalDate || '2026-08-31') + 'T12:00:00');
+  const daysLeft       = Math.max(0, Math.ceil((goalDate - new Date()) / 86400000));
+  const remaining      = { calories: Math.max(0, targets.calories - todayCalories), protein: Math.max(0, targets.protein - todayProtein) };
   const completedCount = GAME_PLAN.filter(t => gamePlan[t.id]).length;
-  const streak     = detectConsistencyStreak(store);
-  const milestone  = getRecentMilestone(store);
+  const streak         = detectConsistencyStreak(store);
+  const milestone      = getRecentMilestone(store);
 
+  // ─── Life OS data ─────────────────────────────────────────────────────────
+  const habitsData  = analyzeHabitsPatterns(store);
+  const goalsData   = analyzeGoalsProgress(store);
+  const journalData = analyzeJournal(store);
+
+  const activeHabits  = (store.habits || []).filter(h => h.active !== false);
+  const habitLogs     = store.habitLogs || {};
+  const todayHabitLog = habitLogs[todayStr] || {};
+  const activeGoals   = (store.goals || []).filter(g => !g.done);
+  const upcomingEvents = (store.calendarEvents || [])
+    .filter(e => e.date >= todayStr)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, 4);
+
+  const todayMoodInfo = MOOD_MAP[journalData.todayMood] || null;
+  const todayJournalEntry = store.journalEntries?.[todayStr] || null;
+
+  // ─── Helpers ───────────────────────────────────────────────────────────────
   const hour    = new Date().getHours();
   const greeting = hour < 5 ? 'Still up?' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const quote   = getContextualQuote(store);
@@ -572,20 +609,50 @@ export default function Dashboard() {
     saveDailyCheckin(todayStr, updated);
   };
 
+  // Habit toggle (stores in habitLogs via update → triggers Gist sync)
+  const toggleHabit = (habitId, value) => {
+    update(s => {
+      const logs = { ...(s.habitLogs || {}) };
+      logs[todayStr] = { ...(logs[todayStr] || {}), [habitId]: value };
+      return { ...s, habitLogs: logs };
+    });
+  };
+
+  function formatEventDate(dateStr) {
+    if (dateStr === todayStr) return 'Today';
+    const d = new Date(dateStr + 'T00:00:00');
+    const diff = Math.ceil((d - new Date()) / 86400000);
+    if (diff === 1) return 'Tomorrow';
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  function getCatInfo(id) {
+    const cats = [
+      { id: 'fitness', color: '#f59e0b', emoji: '💪' },
+      { id: 'career', color: '#3b82f6', emoji: '💼' },
+      { id: 'social', color: '#10b981', emoji: '🤝' },
+      { id: 'financial', color: '#eab308', emoji: '💰' },
+      { id: 'travel', color: '#06b6d4', emoji: '✈️' },
+      { id: 'growth', color: '#a78bfa', emoji: '📚' },
+      { id: 'personal', color: '#f97316', emoji: '🌱' },
+    ];
+    return cats.find(c => c.id === id) || { color: '#78716c', emoji: '🎯' };
+  }
+
   return (
     <div style={{ minHeight: '100svh', background: '#111010' }}>
       <FocusMode open={focusOpen} onClose={() => setFocusOpen(false)} />
 
-      {/* ── Modals ── */}
-      <WeightDetailSheet open={activeSheet === 'weight'}   onClose={close} weightLogs={weightLogs} settings={settings} units={units} />
-      <CaloriesSheet     open={activeSheet === 'calories'} onClose={close} totals={displayTotals} targets={targets} donutData={donutData} donutTotal={donutTotal} />
-      <MacrosSheet       open={activeSheet === 'macros'}   onClose={close} totals={displayTotals} targets={targets} />
-      <StepsSheet        open={activeSheet === 'steps'}    onClose={close} steps={steps} />
-      <StreakSheet        open={activeSheet === 'streak'}   onClose={close} streak={streak} weightLogs={weightLogs} />
-      <FullChartSheet    open={activeSheet === 'chart'}    onClose={close} weightLogs={weightLogs} />
+      {/* ── Sheets ── */}
+      <WeightDetailSheet open={activeSheet === 'weight'}    onClose={close} weightLogs={weightLogs} settings={settings} units={units} />
+      <CaloriesSheet     open={activeSheet === 'calories'}  onClose={close} totals={displayTotals} targets={targets} donutData={donutData} donutTotal={donutTotal} />
+      <MacrosSheet       open={activeSheet === 'macros'}    onClose={close} totals={displayTotals} targets={targets} />
+      <StepsSheet        open={activeSheet === 'steps'}     onClose={close} steps={steps} />
+      <StreakSheet        open={activeSheet === 'streak'}    onClose={close} streak={streak} weightLogs={weightLogs} />
+      <FullChartSheet    open={activeSheet === 'chart'}     onClose={close} weightLogs={weightLogs} />
       <LogWeightSheet    open={activeSheet === 'logweight'} onClose={close} />
 
-      {/* ── Cinematic Hero — compact on mobile ── */}
+      {/* ── Cinematic Hero ── */}
       <div className="relative overflow-hidden" style={{ height: 'clamp(160px, 30svh, 280px)' }}>
         <div className="absolute inset-0" style={{
           backgroundImage: 'url(https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1400&q=60)',
@@ -595,13 +662,11 @@ export default function Dashboard() {
         <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg, rgba(245,158,11,0.14) 0%, transparent 55%)' }} />
         <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse 100% 80% at 50% 50%, transparent 40%, rgba(0,0,0,0.55) 100%)' }} />
 
-        {/* Focus Mode toggle — z-index must beat the absolute inset-0 content div below */}
         <motion.button
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
           onClick={() => setFocusOpen(true)}
           whileTap={{ scale: 0.93 }}
-          aria-label="Open Focus Mode"
-          className="absolute top-3 right-3 md:top-4 md:right-4 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold min-touch"
+          className="absolute top-3 right-3 md:top-4 md:right-4 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold"
           style={{ background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(12px)', color: '#57534e', zIndex: 10 }}>
           <Maximize2 size={11} />Focus
         </motion.button>
@@ -621,7 +686,6 @@ export default function Dashboard() {
           </motion.div>
         </div>
 
-        {/* Days left + lost badges */}
         <motion.div initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2, duration: 0.5 }}
           className="absolute right-3 md:right-8 top-1/2 -translate-y-1/2 flex gap-1.5 md:gap-3">
@@ -643,18 +707,20 @@ export default function Dashboard() {
       {/* ── Main content ── */}
       <div className="px-4 md:px-6 pb-nav md:pb-10" style={{ marginTop: -12 }}>
 
-        {/* ── Quick Actions strip ── */}
+        {/* ── Quick Actions — horizontally scrollable ── */}
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.08, duration: 0.35 }}
           className="flex gap-3 mb-5 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-          <QuickActionBtn icon={Utensils}  label="Log Meal"     color="#f59e0b" onClick={() => navigate('/food')} />
-          <QuickActionBtn icon={Scale}     label="Log Weight"   color="#10b981" onClick={() => open('logweight')} />
-          <QuickActionBtn icon={ChefHat}   label="Cook"         color="#f97316" onClick={() => navigate('/cook')} />
-          <QuickActionBtn icon={Download}  label="Import"       color="#8b5cf6" onClick={() => navigate('/import')} />
-          <QuickActionBtn icon={Footprints} label="Activity"    color="#3b82f6" onClick={() => navigate('/activity')} />
+          <QuickActionBtn icon={Utensils}    label="Log Meal"   color="#f59e0b" onClick={() => navigate('/food')} />
+          <QuickActionBtn icon={Scale}       label="Log Weight" color="#10b981" onClick={() => open('logweight')} />
+          <QuickActionBtn icon={CheckSquare} label="Habits"     color="#f59e0b" onClick={() => navigate('/habits')} />
+          <QuickActionBtn icon={PenLine}     label="Journal"    color="#06b6d4" onClick={() => navigate('/journal')} />
+          <QuickActionBtn icon={ChefHat}     label="Cook"       color="#f97316" onClick={() => navigate('/cook')} />
+          <QuickActionBtn icon={Download}    label="Import"     color="#8b5cf6" onClick={() => navigate('/import')} />
+          <QuickActionBtn icon={Footprints}  label="Activity"   color="#3b82f6" onClick={() => navigate('/activity')} />
         </motion.div>
 
-        {/* ── Stat cards grid ── */}
+        {/* ── Stat cards ── */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 mb-5">
           <StatCard title="Weight"      value={latestWeight} unit={weightUnitLabel} sub={`−${lost} ${weightUnitLabel} lost`}
             icon={TrendingDown} iconColor="#f59e0b" sparkData={sparkWeightData} delay={0.05} onTap={() => open('weight')} />
@@ -664,23 +730,151 @@ export default function Dashboard() {
             icon={Target} iconColor="#10b981" barPct={(todayProtein / targets.protein) * 100} delay={0.15} onTap={() => open('macros')} />
           <StatCard title="Steps"       value={steps.toLocaleString()} unit="" sub="Goal: 10,000"
             icon={Footprints} iconColor="#3b82f6" barPct={(steps / 10000) * 100} delay={0.2} onTap={() => open('steps')} />
-          <StatCard title="Consistency" value="" sub="This week" ring={92} delay={0.25} onTap={() => open('streak')} />
+          <StatCard title="Habits"      value={`${habitsData.todayDone}/${habitsData.todayTotal}`} unit="" sub={`${habitsData.weekAvgPct}% this week`}
+            icon={CheckSquare} iconColor="#f59e0b"
+            barPct={habitsData.todayTotal > 0 ? (habitsData.todayDone / habitsData.todayTotal) * 100 : 0}
+            delay={0.25} onTap={() => navigate('/habits')} />
           <StatCard title="Streak"      value={streak || 11} unit="days" sub="in a row" icon={Flame} iconColor="#f59e0b" delay={0.3} onTap={() => open('streak')} />
         </div>
+
+        {/* ── Life OS Summary bar — quick glance ── */}
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.33, duration: 0.35 }}
+          className="flex gap-2 overflow-x-auto pb-1 mb-5" style={{ scrollbarWidth: 'none' }}>
+          {/* Habits pill */}
+          <button onClick={() => navigate('/habits')}
+            className="flex items-center gap-2 px-3 py-2 rounded-2xl flex-shrink-0 transition-all"
+            style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.15)' }}>
+            <CheckSquare size={13} style={{ color: '#f59e0b' }} />
+            <span className="text-xs font-semibold" style={{ color: '#f5f4f2' }}>
+              {habitsData.todayDone}/{habitsData.todayTotal}
+            </span>
+            <span className="text-xs" style={{ color: '#57534e' }}>habits</span>
+          </button>
+          {/* Goals pill */}
+          <button onClick={() => navigate('/goals')}
+            className="flex items-center gap-2 px-3 py-2 rounded-2xl flex-shrink-0 transition-all"
+            style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.15)' }}>
+            <Target size={13} style={{ color: '#a78bfa' }} />
+            <span className="text-xs font-semibold" style={{ color: '#f5f4f2' }}>{activeGoals.length}</span>
+            <span className="text-xs" style={{ color: '#57534e' }}>goals</span>
+          </button>
+          {/* Journal pill */}
+          <button onClick={() => navigate('/journal')}
+            className="flex items-center gap-2 px-3 py-2 rounded-2xl flex-shrink-0 transition-all"
+            style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.15)' }}>
+            {todayMoodInfo
+              ? <span style={{ fontSize: 14 }}>{todayMoodInfo.emoji}</span>
+              : <NotebookPen size={13} style={{ color: '#06b6d4' }} />}
+            <span className="text-xs" style={{ color: todayMoodInfo ? todayMoodInfo.color : '#57534e' }}>
+              {todayMoodInfo ? todayMoodInfo.label : 'No entry'}
+            </span>
+          </button>
+          {/* Next event pill */}
+          {upcomingEvents[0] && (
+            <button onClick={() => navigate('/calendar')}
+              className="flex items-center gap-2 px-3 py-2 rounded-2xl flex-shrink-0 transition-all"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <span style={{ fontSize: 14 }}>{upcomingEvents[0].emoji}</span>
+              <span className="text-xs" style={{ color: '#a8a29e' }}>{upcomingEvents[0].title}</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0"
+                style={{ background: 'rgba(255,255,255,0.06)', color: '#57534e' }}>
+                {formatEventDate(upcomingEvents[0].date)}
+              </span>
+            </button>
+          )}
+          {/* Goals deadline warning */}
+          {goalsData.nearestDays !== null && goalsData.nearestDays <= 21 && (
+            <button onClick={() => navigate('/goals')}
+              className="flex items-center gap-2 px-3 py-2 rounded-2xl flex-shrink-0 transition-all"
+              style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)' }}>
+              <span style={{ fontSize: 12 }}>⏰</span>
+              <span className="text-xs" style={{ color: '#ef4444' }}>{goalsData.nearestDays}d deadline</span>
+            </button>
+          )}
+        </motion.div>
 
         {/* ── Body grid ── */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5">
 
-          {/* Left: 2 cols */}
+          {/* ── Left column (2/3) ── */}
           <div className="md:col-span-2 flex flex-col gap-4 md:gap-5">
+
+            {/* Habits — collapsible */}
+            <CollapsibleSection title="Habits" icon={CheckSquare} iconColor="#f59e0b"
+              badge={habitsData.todayDone === habitsData.todayTotal && habitsData.todayTotal > 0 ? '🔥 All done' : `${habitsData.todayDone}/${habitsData.todayTotal}`}
+              defaultOpen={true} delay={0.35} onOpenAll={() => navigate('/habits')}>
+              {activeHabits.length === 0 ? (
+                <div className="text-center py-6">
+                  <p className="text-sm" style={{ color: '#57534e' }}>No habits set up yet</p>
+                  <button onClick={() => navigate('/habits')}
+                    className="mt-3 text-xs px-4 py-2 rounded-xl"
+                    style={{ background: 'rgba(245,158,11,0.1)', color: '#f59e0b' }}>
+                    Add habits →
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Progress bar */}
+                  <div className="mb-3">
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                      <motion.div className="h-full rounded-full"
+                        style={{ background: 'linear-gradient(90deg, #f59e0b, #f97316)' }}
+                        animate={{ width: `${habitsData.todayTotal > 0 ? (habitsData.todayDone / habitsData.todayTotal) * 100 : 0}%` }}
+                        transition={{ duration: 0.6 }} />
+                    </div>
+                  </div>
+                  {/* Habit rows (show up to 5) */}
+                  <div className="space-y-1.5 mb-3">
+                    {activeHabits.slice(0, 5).map(habit => {
+                      const done  = !!todayHabitLog[habit.id];
+                      const color = CATEGORY_COLORS[habit.category] || '#78716c';
+                      return (
+                        <motion.button key={habit.id} whileTap={{ scale: 0.98 }}
+                          onClick={() => toggleHabit(habit.id, !done)}
+                          className="flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left transition-all"
+                          style={{
+                            background: done ? `${color}0d` : 'rgba(255,255,255,0.03)',
+                            border: `1px solid ${done ? `${color}25` : 'rgba(255,255,255,0.06)'}`,
+                          }}>
+                          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                            style={{ background: done ? color : 'rgba(255,255,255,0.06)' }}>
+                            {done
+                              ? <Check size={13} style={{ color: '#000' }} strokeWidth={3} />
+                              : <span style={{ fontSize: 13 }}>{habit.emoji}</span>}
+                          </div>
+                          <span className="text-sm flex-1" style={{
+                            color: done ? '#57534e' : '#a8a29e',
+                            textDecoration: done ? 'line-through' : 'none',
+                          }}>
+                            {habit.name}
+                          </span>
+                          {done && <Check size={12} style={{ color, flexShrink: 0 }} />}
+                        </motion.button>
+                      );
+                    })}
+                    {activeHabits.length > 5 && (
+                      <p className="text-xs text-center pt-1" style={{ color: '#3d3a36' }}>
+                        +{activeHabits.length - 5} more habits
+                      </p>
+                    )}
+                  </div>
+                  <button onClick={() => navigate('/habits')}
+                    className="w-full text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5"
+                    style={{ background: 'rgba(255,255,255,0.04)', color: '#57534e', border: '1px solid rgba(255,255,255,0.07)' }}>
+                    Open Habits <ChevronRight size={12} />
+                  </button>
+                </>
+              )}
+            </CollapsibleSection>
 
             {/* Game Plan */}
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.35, duration: 0.4 }}
+              transition={{ delay: 0.38, duration: 0.4 }}
               className="rounded-2xl p-4 md:p-5 relative overflow-hidden"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
               <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)' }} />
-              <div className="flex items-center justify-between mb-3 md:mb-4">
+              <div className="flex items-center justify-between mb-3">
                 <div>
                   <h2 className="text-sm font-bold" style={{ color: '#f5f4f2' }}>Today's Game Plan</h2>
                   <p className="text-xs mt-0.5" style={{ color: '#57534e' }}>
@@ -703,10 +897,10 @@ export default function Dashboard() {
                 {GAME_PLAN.map((task, i) => (
                   <motion.button key={task.id}
                     initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.4 + i * 0.05 }}
+                    transition={{ delay: 0.42 + i * 0.05 }}
                     whileTap={{ scale: 0.97 }}
                     onClick={() => toggleCheck(task.id)}
-                    className="w-full flex items-center gap-3 px-3 md:px-4 py-3 rounded-xl text-left min-touch"
+                    className="w-full flex items-center gap-3 px-3 md:px-4 py-3 rounded-xl text-left"
                     style={{
                       background: gamePlan[task.id] ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.03)',
                       border: `1px solid ${gamePlan[task.id] ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.06)'}`,
@@ -733,9 +927,62 @@ export default function Dashboard() {
               </div>
             </motion.div>
 
+            {/* Goals snapshot — collapsible */}
+            <CollapsibleSection title="Goals" icon={Target} iconColor="#a78bfa"
+              badge={activeGoals.length > 0 ? `${activeGoals.length} active` : undefined}
+              defaultOpen={true} delay={0.43} onOpenAll={() => navigate('/goals')}>
+              {activeGoals.length === 0 ? (
+                <div className="text-center py-6">
+                  <p className="text-sm" style={{ color: '#57534e' }}>No active goals</p>
+                  <button onClick={() => navigate('/goals')}
+                    className="mt-3 text-xs px-4 py-2 rounded-xl"
+                    style={{ background: 'rgba(167,139,250,0.1)', color: '#a78bfa' }}>
+                    Add goals →
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-3 mb-3">
+                    {activeGoals.slice(0, 3).map(goal => {
+                      const pct = goal.progress || 0;
+                      const cat = getCatInfo(goal.category);
+                      const days = goal.targetDate
+                        ? Math.ceil((new Date(goal.targetDate) - new Date()) / 86400000)
+                        : null;
+                      return (
+                        <div key={goal.id}>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <p className="text-xs font-medium" style={{ color: '#a8a29e' }}>{goal.title}</p>
+                            <div className="flex items-center gap-1.5">
+                              {days !== null && (
+                                <span className="text-[9px]" style={{ color: days <= 7 ? '#ef4444' : '#3d3a36' }}>
+                                  {days > 0 ? `${days}d` : 'overdue'}
+                                </span>
+                              )}
+                              <span className="text-[10px] font-bold" style={{ color: cat.color }}>{pct}%</span>
+                            </div>
+                          </div>
+                          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                            <motion.div className="h-full rounded-full"
+                              style={{ background: `linear-gradient(90deg, ${cat.color}88, ${cat.color})` }}
+                              animate={{ width: `${pct}%` }} transition={{ duration: 0.5 }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <button onClick={() => navigate('/goals')}
+                    className="w-full text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5"
+                    style={{ background: 'rgba(255,255,255,0.04)', color: '#57534e', border: '1px solid rgba(255,255,255,0.07)' }}>
+                    Open Goals <ChevronRight size={12} />
+                  </button>
+                </>
+              )}
+            </CollapsibleSection>
+
             {/* Daily Timeline */}
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.42, duration: 0.4 }}
+              transition={{ delay: 0.48, duration: 0.4 }}
               className="rounded-2xl p-4 md:p-5 relative overflow-hidden"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
               <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)' }} />
@@ -744,7 +991,7 @@ export default function Dashboard() {
 
             {/* Nutrition Overview */}
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.48, duration: 0.4 }}
+              transition={{ delay: 0.52, duration: 0.4 }}
               className="rounded-2xl p-4 md:p-5 relative overflow-hidden"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
               <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)' }} />
@@ -762,7 +1009,6 @@ export default function Dashboard() {
                   ))}
                 </div>
               </div>
-              {/* Mobile: stack, Desktop: side-by-side */}
               <div className="flex flex-col sm:flex-row items-center gap-4 md:gap-6">
                 <div style={{ width: 100, height: 100, flexShrink: 0 }}>
                   <ResponsiveContainer width="100%" height="100%">
@@ -782,10 +1028,10 @@ export default function Dashboard() {
               </div>
             </motion.div>
 
-            {/* Weight Trend — tap to fullscreen */}
+            {/* Weight Trend */}
             <motion.button
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.53, duration: 0.4 }}
+              transition={{ delay: 0.56, duration: 0.4 }}
               whileTap={{ scale: 0.99 }}
               onClick={() => open('chart')}
               className="rounded-2xl p-4 md:p-5 relative overflow-hidden w-full text-left"
@@ -813,26 +1059,121 @@ export default function Dashboard() {
                     </defs>
                     <XAxis dataKey="date" tick={{ fill: '#3d3835', fontSize: 10 }} axisLine={false} tickLine={false} interval={3} />
                     <YAxis domain={['auto', 'auto']} tick={{ fill: '#3d3835', fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <Tooltip
-                      contentStyle={{ background: '#1a1714', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 10, color: '#f5f4f2', fontSize: 12 }}
-                      labelStyle={{ color: '#78716c' }}
-                    />
+                    <Tooltip contentStyle={{ background: '#1a1714', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 10, color: '#f5f4f2', fontSize: 12 }} labelStyle={{ color: '#78716c' }} />
                     <Area type="monotone" dataKey="weight" stroke="#f59e0b" strokeWidth={2.5} fill="url(#wGrad)" dot={false} activeDot={{ r: 4, fill: '#f59e0b', strokeWidth: 0 }} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
             </motion.button>
+
+            {/* Schedule / Calendar preview */}
+            <CollapsibleSection title="Schedule" icon={CalendarDays} iconColor="#06b6d4"
+              badge={upcomingEvents.length > 0 ? `${upcomingEvents.length} upcoming` : undefined}
+              defaultOpen={false} delay={0.6} onOpenAll={() => navigate('/calendar')}>
+              {upcomingEvents.length === 0 ? (
+                <div className="py-4 text-center">
+                  <p className="text-sm" style={{ color: '#57534e' }}>No upcoming events</p>
+                  <button onClick={() => navigate('/calendar')}
+                    className="mt-3 text-xs px-4 py-2 rounded-xl"
+                    style={{ background: 'rgba(6,182,212,0.1)', color: '#06b6d4' }}>
+                    Open Calendar →
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-1.5 mb-3">
+                    {upcomingEvents.map(event => (
+                      <div key={event.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+                        style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <span style={{ fontSize: 18, flexShrink: 0 }}>{event.emoji}</span>
+                        <p className="text-sm flex-1" style={{ color: '#a8a29e' }}>{event.title}</p>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full flex-shrink-0"
+                          style={{
+                            background: event.date === todayStr ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.05)',
+                            color: event.date === todayStr ? '#f59e0b' : '#57534e',
+                          }}>
+                          {formatEventDate(event.date)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => navigate('/calendar')}
+                      className="flex-1 text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5"
+                      style={{ background: 'rgba(255,255,255,0.04)', color: '#57534e', border: '1px solid rgba(255,255,255,0.07)' }}>
+                      Open Calendar <ChevronRight size={12} />
+                    </button>
+                    <button onClick={() => navigate('/calendar')}
+                      className="text-xs px-3 py-2.5 rounded-xl flex items-center gap-1"
+                      style={{ background: 'rgba(6,182,212,0.1)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.2)' }}>
+                      <Plus size={12} /> Add
+                    </button>
+                  </div>
+                </>
+              )}
+            </CollapsibleSection>
           </div>
 
           {/* ── Right column ── */}
           <div className="flex flex-col gap-4 md:gap-5">
 
-            {/* AI Coach card */}
+            {/* AI Life OS Coach (upgraded context) */}
             <AICoachCard delay={0.38} />
+
+            {/* Journal preview */}
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.44, duration: 0.4 }}
+              className="rounded-2xl p-4 relative overflow-hidden"
+              style={{ background: 'rgba(6,182,212,0.05)', border: '1px solid rgba(6,182,212,0.12)' }}>
+              <div className="flex items-center gap-2 mb-3">
+                <NotebookPen size={13} style={{ color: '#06b6d4' }} />
+                <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#06b6d4', letterSpacing: '0.1em' }}>Journal</p>
+                {todayMoodInfo && (
+                  <span className="ml-auto text-sm">{todayMoodInfo.emoji}</span>
+                )}
+              </div>
+              {todayJournalEntry ? (
+                <>
+                  <p className="text-xs leading-relaxed mb-1" style={{ color: '#57534e' }}>
+                    {todayMoodInfo ? <span style={{ color: todayMoodInfo.color }}>Feeling {todayMoodInfo.label.toLowerCase()}. </span> : ''}
+                    {todayJournalEntry.text?.slice(0, 80)}{todayJournalEntry.text?.length > 80 ? '…' : ''}
+                  </p>
+                  {todayJournalEntry.tags?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2 mb-3">
+                      {todayJournalEntry.tags.slice(0, 3).map(t => (
+                        <span key={t} className="text-[9px] px-1.5 py-0.5 rounded-full"
+                          style={{ background: 'rgba(6,182,212,0.1)', color: '#06b6d4' }}>{t}</span>
+                      ))}
+                    </div>
+                  )}
+                  <button onClick={() => navigate('/journal')}
+                    className="w-full text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 mt-2"
+                    style={{ background: 'rgba(6,182,212,0.1)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.2)' }}>
+                    Update entry <ChevronRight size={11} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs mb-3 leading-relaxed" style={{ color: '#57534e' }}>
+                    {[
+                      'What did you accomplish today?',
+                      'What made you proud today?',
+                      'How did training feel?',
+                      'What are you grateful for?',
+                    ][new Date().getDay() % 4]}
+                  </p>
+                  <button onClick={() => navigate('/journal')}
+                    className="w-full py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5"
+                    style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.2), rgba(8,145,178,0.2))', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.25)' }}>
+                    <PenLine size={12} /> Write today's journal
+                  </button>
+                </>
+              )}
+            </motion.div>
 
             {/* Daily Insight */}
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.44, duration: 0.4 }}
+              transition={{ delay: 0.5, duration: 0.4 }}
               className="rounded-2xl p-4 md:p-5 relative overflow-hidden"
               style={{
                 background: 'linear-gradient(145deg, rgba(245,158,11,0.1) 0%, rgba(249,115,22,0.05) 60%, rgba(255,255,255,0.03) 100%)',
@@ -860,11 +1201,11 @@ export default function Dashboard() {
 
             {/* Today's Macros */}
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5, duration: 0.4 }}
+              transition={{ delay: 0.54, duration: 0.4 }}
               className="rounded-2xl p-4 md:p-5 relative overflow-hidden"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
               <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)' }} />
-              <h2 className="text-sm font-bold mb-3 md:mb-4" style={{ color: '#f5f4f2' }}>Today's Macros</h2>
+              <h2 className="text-sm font-bold mb-3" style={{ color: '#f5f4f2' }}>Today's Macros</h2>
               <div className="space-y-3">
                 <MacroBar label="Protein" current={todayProtein} target={targets.protein} color="#f59e0b" />
                 <MacroBar label="Carbs"   current={todayCarbs}   target={targets.carbs}   color="#10b981" />
@@ -875,7 +1216,7 @@ export default function Dashboard() {
             {/* Recent Milestone */}
             {milestone && (
               <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.54, duration: 0.4 }}
+                transition={{ delay: 0.58, duration: 0.4 }}
                 className="rounded-2xl p-4 relative overflow-hidden"
                 style={{
                   background: `linear-gradient(145deg, ${RARITY_META[milestone.rarity].glow} 0%, rgba(255,255,255,0.03) 100%)`,
@@ -897,11 +1238,11 @@ export default function Dashboard() {
               </motion.div>
             )}
 
-            {/* Cook Something CTA */}
+            {/* Cook CTA */}
             <motion.button
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
               whileTap={{ scale: 0.97 }}
-              transition={{ delay: 0.58, duration: 0.4 }}
+              transition={{ delay: 0.62, duration: 0.4 }}
               onClick={() => navigate('/cook')}
               className="rounded-2xl overflow-hidden relative w-full text-left"
               style={{ border: '1px solid rgba(245,158,11,0.2)' }}>
@@ -911,7 +1252,7 @@ export default function Dashboard() {
                 filter: 'brightness(0.22) saturate(1.4)',
               }} />
               <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg, rgba(245,158,11,0.18), rgba(249,115,22,0.1))' }} />
-              <div className="relative p-4 md:p-5">
+              <div className="relative p-4">
                 <ChefHat size={20} style={{ color: '#f59e0b', marginBottom: 8 }} />
                 <h3 className="text-sm font-bold mb-1" style={{ color: '#f5f4f2' }}>What's for dinner?</h3>
                 <p className="text-xs mb-3 leading-relaxed" style={{ color: '#78716c' }}>
@@ -928,7 +1269,7 @@ export default function Dashboard() {
             <motion.button
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
               whileTap={{ scale: 0.97 }}
-              transition={{ delay: 0.64, duration: 0.4 }}
+              transition={{ delay: 0.68, duration: 0.4 }}
               onClick={() => navigate('/progress')}
               className="rounded-2xl p-4 relative overflow-hidden w-full text-left"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>

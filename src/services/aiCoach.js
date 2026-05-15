@@ -68,11 +68,13 @@ export function detectConsistencyStreak(store) {
 }
 
 export function generateDailyCoachMessage(store) {
-  const nutrition = analyzeNutritionPatterns(store);
-  const training  = analyzeTrainingPatterns(store);
-  const streak    = detectConsistencyStreak(store);
-  const weightLogs = store.weightLogs || [];
-  const settings   = store.settings || {};
+  const nutrition  = analyzeNutritionPatterns(store);
+  const training   = analyzeTrainingPatterns(store);
+  const streak     = detectConsistencyStreak(store);
+  const habitsData = analyzeHabitsPatterns(store);
+  const goalsData  = analyzeGoalsProgress(store);
+  const weightLogs  = store.weightLogs || [];
+  const settings    = store.settings || {};
   const weightTrend = detectWeightTrend(store);
   const insights = [];
 
@@ -123,6 +125,31 @@ export function generateDailyCoachMessage(store) {
     insights.push({ type: 'no_streak', message: "Log today's weight to restart your streak. The streak is the habit. The habit is the result.", sentiment: 'neutral' });
   }
 
+  // Habits
+  if (habitsData.todayTotal > 0) {
+    if (habitsData.weekAvgPct >= 75) {
+      insights.push({ type: 'habits_good', message: `Habit completion is averaging ${habitsData.weekAvgPct}% this week — that's elite consistency. Most people quit before it becomes automatic.`, sentiment: 'positive' });
+    } else if (habitsData.weakHabits.length >= 2) {
+      const weak = habitsData.weakHabits.slice(0, 2).join(' and ');
+      insights.push({ type: 'habits_weak', message: `${weak} have been missed most of this week. The small habits are the foundation — pick one and protect it first.`, sentiment: 'warning' });
+    }
+    if (habitsData.todayDone === habitsData.todayTotal && habitsData.todayTotal > 0) {
+      insights.push({ type: 'habits_today', message: `All ${habitsData.todayTotal} habits done today. That's a perfect day — lock it in with a solid sleep.`, sentiment: 'positive' });
+    } else if (habitsData.todayDone === 0 && habitsData.todayTotal > 0) {
+      insights.push({ type: 'habits_none', message: `Today's ${habitsData.todayTotal} habits are all unchecked. Start with the easiest one — momentum beats motivation.`, sentiment: 'warning' });
+    }
+  }
+
+  // Goals
+  if (goalsData.active > 0) {
+    if (goalsData.nearestDays !== null && goalsData.nearestDays <= 14 && goalsData.nearestDays > 0) {
+      const pct = goalsData.nearest?.progress || 0;
+      insights.push({ type: 'goal_urgent', message: `"${goalsData.nearest.title}" is ${goalsData.nearestDays} days away at ${pct}% progress. Focus narrows here.`, sentiment: goalsData.nearestDays <= 7 ? 'warning' : 'neutral' });
+    } else if (goalsData.avgProgress >= 60) {
+      insights.push({ type: 'goals_good', message: `Goals averaging ${goalsData.avgProgress}% progress. You're in execution mode — stay systematic.`, sentiment: 'positive' });
+    }
+  }
+
   if (!insights.length) {
     insights.push({ type: 'general', message: 'Keep logging. The data builds your story — and right now, it looks like you\'re doing the work.', sentiment: 'positive' });
   }
@@ -133,6 +160,66 @@ export function generateDailyCoachMessage(store) {
   const secondary = insights.find(i => i !== primary) || null;
 
   return { primary, secondary, all: insights };
+}
+
+// ── Life OS analysis helpers ──────────────────────────────────────────────────
+
+export function analyzeHabitsPatterns(store) {
+  const habits   = (store.habits || []).filter(h => h.active !== false);
+  const logs     = store.habitLogs || {};
+  const today    = new Date().toISOString().slice(0, 10);
+  const todayLog = logs[today] || {};
+
+  const todayDone  = habits.filter(h => todayLog[h.id]).length;
+  const todayTotal = habits.length;
+
+  // Last 7 days completion rate
+  const last7 = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    return d.toISOString().slice(0, 10);
+  });
+  const weekDaysWithAny = last7.filter(d => {
+    const log = logs[d] || {};
+    return habits.some(h => log[h.id]);
+  }).length;
+  const weekAvgPct = todayTotal > 0
+    ? Math.round((last7.reduce((s, d) => {
+        const log = logs[d] || {};
+        return s + habits.filter(h => log[h.id]).length;
+      }, 0) / (last7.length * todayTotal)) * 100)
+    : 0;
+
+  // Which habits are consistently missed?
+  const weakHabits = habits.filter(h => {
+    const doneDays = last7.filter(d => logs[d]?.[h.id]).length;
+    return doneDays <= 2; // missed 5+ of last 7 days
+  }).map(h => h.name);
+
+  return { todayDone, todayTotal, weekDaysWithAny, weekAvgPct, weakHabits };
+}
+
+export function analyzeGoalsProgress(store) {
+  const goals  = (store.goals || []).filter(g => !g.done);
+  const today  = new Date();
+  const urgent = goals
+    .filter(g => g.targetDate)
+    .sort((a, b) => a.targetDate.localeCompare(b.targetDate));
+  const nearest = urgent[0] || null;
+  const nearestDays = nearest
+    ? Math.ceil((new Date(nearest.targetDate) - today) / 86400000)
+    : null;
+  const avgProgress = goals.length
+    ? Math.round(goals.reduce((s, g) => s + (g.progress || 0), 0) / goals.length)
+    : 0;
+  return { active: goals.length, avgProgress, nearest, nearestDays };
+}
+
+export function analyzeJournal(store) {
+  const entries = store.journalEntries || {};
+  const today   = new Date().toISOString().slice(0, 10);
+  const todayEntry = entries[today] || null;
+  const entryCount = Object.keys(entries).length;
+  return { todayEntry, entryCount, todayMood: todayEntry?.mood || null };
 }
 
 export function generateAdjustmentSuggestion(store) {
@@ -159,6 +246,10 @@ export async function getAICoachInsight(store) {
   const trend = detectWeightTrend(store);
   const streak = detectConsistencyStreak(store);
 
+  const habitsData = analyzeHabitsPatterns(store);
+  const goalsData  = analyzeGoalsProgress(store);
+  const journalData = analyzeJournal(store);
+
   const context = [
     `Athlete: ${settings.name || 'Naman'}, cutting from ${settings.startWeight}lbs to ${settings.goalWeight}lbs by ${settings.goalDate}.`,
     `Current weight: ${weightLogs[weightLogs.length - 1]?.weight || 'unknown'}lbs.`,
@@ -166,6 +257,11 @@ export async function getAICoachInsight(store) {
     nutrition ? `Recent avg: ${Math.round(nutrition.avgProtein)}g protein, ${Math.round(nutrition.avgCal)}kcal. Low protein days: ${nutrition.lowProteinDays}/7.` : '',
     trend ? `Weight trend: ${trend.weeklyRateStr}.` : '',
     `Tracking streak: ${streak} days.`,
+    habitsData.todayTotal > 0 ? `Habits today: ${habitsData.todayDone}/${habitsData.todayTotal} done. Week avg: ${habitsData.weekAvgPct}%.` : '',
+    habitsData.weakHabits.length ? `Struggling habits: ${habitsData.weakHabits.slice(0, 2).join(', ')}.` : '',
+    goalsData.active > 0 ? `Active goals: ${goalsData.active}, avg progress ${goalsData.avgProgress}%.` : '',
+    goalsData.nearestDays !== null ? `Nearest goal deadline: ${goalsData.nearestDays} days.` : '',
+    journalData.todayMood ? `Today's mood: ${journalData.todayMood}.` : 'No journal entry today.',
   ].filter(Boolean).join(' ');
 
   try {
@@ -175,7 +271,7 @@ export async function getAICoachInsight(store) {
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         messages: [
-          { role: 'system', content: 'You are an elite performance coach. Give ONE concise, intelligent coaching insight (1-2 sentences max). Calm, disciplined, supportive. No emojis. No fluff. Direct and specific.' },
+          { role: 'system', content: 'You are an elite life optimization coach covering fitness, nutrition, habits, goals, schedule, and mental state. Give ONE concise, specific insight (2 sentences max) that references the actual data. Be direct, calm, and actionable. No emojis. No generic advice.' },
           { role: 'user', content: context },
         ],
         max_tokens: 100,

@@ -300,5 +300,128 @@ Be direct, encouraging, data-aware. No fluff. No generic advice.`;
   }
 });
 
+// ── POST /api/ai/parse-nutrition-label — OCR nutrition facts from image ───────
+app.post('/api/ai/parse-nutrition-label', async (req, res) => {
+  const { imageBase64, imageUrl, notes } = req.body || {};
+  if (!imageBase64 && !imageUrl) {
+    return res.status(400).json({ error: 'imageBase64 or imageUrl required' });
+  }
+
+  const imageContent = imageBase64
+    ? { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}` } }
+    : { type: 'image_url', image_url: { url: imageUrl } };
+
+  const prompt = `You are a nutrition label OCR expert. Extract the nutritional information from this image of a nutrition facts label.
+
+Return ONLY this JSON (no markdown, no extra text):
+{
+  "foundLabel": true,
+  "productName": "Product name if visible, or empty string",
+  "servingSize": "serving size text e.g. '1 cup (240ml)'",
+  "servingsPerContainer": 1,
+  "calories": 0,
+  "protein": 0,
+  "carbs": 0,
+  "fat": 0,
+  "saturatedFat": 0,
+  "sodium": 0,
+  "sugar": 0,
+  "fiber": 0,
+  "ingredients": "ingredients text if visible, or empty string",
+  "confidence": 80
+}
+
+If this is NOT a nutrition label image, return:
+{
+  "foundLabel": false,
+  "failureReason": "Brief reason"
+}
+
+Confidence: 90+ if all values clearly visible, 70-89 if most values clear, 40-69 if partially visible, <40 if very unclear.
+Always return numbers (not strings) for nutritional values.`;
+
+  try {
+    const key = process.env.OPENAI_API_KEY;
+    if (!key) throw new Error('OPENAI_API_KEY not set');
+
+    const res2 = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt + (notes ? `\n\nUser notes: ${notes}` : '') },
+              imageContent,
+            ],
+          },
+        ],
+        max_tokens: 600,
+        temperature: 0.1,
+      }),
+    });
+
+    if (!res2.ok) {
+      const err = await res2.text().catch(() => res2.status);
+      throw new Error(`OpenAI ${res2.status}: ${err}`);
+    }
+
+    const data = await res2.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    const cleaned = content.trim().replace(/^```json?\n?/, '').replace(/```$/, '').trim();
+    const result = JSON.parse(cleaned);
+    res.json({ result });
+  } catch (err) {
+    console.error('[AI/parse-nutrition-label]', err.message);
+    // Graceful degradation — return empty template for manual fill
+    res.json({
+      result: {
+        foundLabel: false,
+        failureReason: `Extraction failed: ${err.message}. Please fill in the values manually.`,
+        manualFallback: true,
+      },
+    });
+  }
+});
+
+// ── POST /api/ai/barcode-lookup — Open Food Facts barcode ────────────────────
+app.get('/api/barcode/:code', async (req, res) => {
+  const { code } = req.params;
+  if (!code || !/^\d{6,14}$/.test(code)) {
+    return res.status(400).json({ error: 'Invalid barcode format' });
+  }
+  try {
+    const r = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
+    if (!r.ok) throw new Error('OFF API error');
+    const data = await r.json();
+    if (data.status !== 1 || !data.product) {
+      return res.json({ found: false });
+    }
+    const p = data.product;
+    const n = p.nutriments || {};
+    res.json({
+      found: true,
+      product: {
+        name:        p.product_name || p.product_name_en || 'Unknown',
+        brand:       p.brands || '',
+        servingSize: p.serving_size || '100g',
+        calories:    Math.round(n['energy-kcal_serving'] || n['energy-kcal_100g'] || 0),
+        protein:     Math.round((n.proteins_serving    || n.proteins_100g    || 0) * 10) / 10,
+        carbs:       Math.round((n.carbohydrates_serving || n.carbohydrates_100g || 0) * 10) / 10,
+        fat:         Math.round((n.fat_serving         || n.fat_100g         || 0) * 10) / 10,
+        sodium:      Math.round((n.sodium_serving      || n.sodium_100g      || 0) * 1000) / 1000,
+        sugar:       Math.round((n.sugars_serving      || n.sugars_100g      || 0) * 10) / 10,
+        barcode:     code,
+        imageUrl:    p.image_url || '',
+      },
+    });
+  } catch (err) {
+    console.error('[barcode]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const PORT = process.env.API_PORT || 3001;
 app.listen(PORT, () => console.log(`Apex API server listening on :${PORT}`));

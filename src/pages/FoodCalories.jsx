@@ -1,12 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, X, Clock, Star, Copy, Zap, Loader2 } from 'lucide-react';
+import {
+  Search, Plus, X, Clock, Star, Copy, Zap, Loader2,
+  PenLine, ScanLine, Barcode, Camera, ChevronRight, Save,
+} from 'lucide-react';
 import {
   useApexStore, addFoodEntry, removeFoodEntry, getFoodLog,
   getDailyTotals, getRecentFoods, getSavedMeals, copyYesterdayMeals,
+  saveCustomFood, getCustomFoods,
 } from '../store/apexStore';
 import { searchAllFoods, SOURCE_META } from '../services/foodSearch';
 import { parseNaturalLanguageLog } from '../services/aiService';
+import {
+  parseNutritionLabel, getProductByBarcode,
+  nutritionResultToFood, validateImageFile, emptyNutritionResult,
+} from '../services/nutritionLabelParser';
 import { useToast } from '../components/Toast';
 
 const MEALS = ['breakfast', 'lunch', 'dinner', 'snacks'];
@@ -16,7 +24,7 @@ const MEAL_META = {
   dinner:    { label: 'Dinner',    emoji: '🌙',  color: '#6366f1' },
   snacks:    { label: 'Snacks',    emoji: '🍎',  color: '#f97316' },
 };
-const TABS = ['Quick Add', 'Saved Meals', 'Recent', 'AI Log'];
+const TABS = ['Quick Add', 'Saved Meals', 'Recent', 'AI Log', 'Custom', 'Scan'];
 
 function MacroRing({ pct, color, size = 36, stroke = 3 }) {
   const r = (size - stroke * 2) / 2;
@@ -140,6 +148,388 @@ function SavedMealCard({ meal, activeMeal, onAdd }) {
   );
 }
 
+// ── NumField — compact number input ───────────────────────────────────────────
+function NumField({ label, value, onChange, unit = 'g', color = '#78716c' }) {
+  return (
+    <div className="flex-1">
+      <p className="text-[10px] mb-1" style={{ color: '#57534e' }}>{label}</p>
+      <div className="relative">
+        <input type="number" inputMode="decimal" value={value}
+          onChange={e => onChange(e.target.value === '' ? '' : Number(e.target.value))}
+          className="w-full px-2.5 py-2 rounded-lg text-sm outline-none text-right pr-6"
+          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', color: '#f5f4f2' }} />
+        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px]" style={{ color }}>{unit}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Custom Food Modal ─────────────────────────────────────────────────────────
+function CustomFoodModal({ onClose, onAdd, activeMeal = 'breakfast', prefill = null }) {
+  const [name,        setName]        = useState(prefill?.name || '');
+  const [emoji,       setEmoji]       = useState(prefill?.emoji || '🍽️');
+  const [servingSize, setServingSize] = useState(prefill?.servingSize || '1 serving');
+  const [calories,    setCalories]    = useState(prefill?.calories ?? '');
+  const [protein,     setProtein]     = useState(prefill?.protein  ?? '');
+  const [carbs,       setCarbs]       = useState(prefill?.carbs    ?? '');
+  const [fat,         setFat]         = useState(prefill?.fat      ?? '');
+  const [sodium,      setSodium]      = useState(prefill?.sodium   ?? '');
+  const [notes,       setNotes]       = useState(prefill?.notes    || '');
+  const [barcode,     setBarcode]     = useState(prefill?.barcode  || '');
+  const [saveReusable, setSaveReusable] = useState(true);
+  const [barcodeLoading, setBarcodeLoading] = useState(false);
+  const toast = useToast();
+
+  const isValid = name.trim().length > 0 && (calories !== '' && Number(calories) >= 0);
+
+  const lookupBarcode = async () => {
+    if (!barcode.trim()) return;
+    setBarcodeLoading(true);
+    const result = await getProductByBarcode(barcode.trim());
+    setBarcodeLoading(false);
+    if (result.found && result.product) {
+      const p = result.product;
+      setName(p.name || name);
+      setServingSize(p.servingSize || servingSize);
+      setCalories(p.calories || calories);
+      setProtein(p.protein || protein);
+      setCarbs(p.carbs || carbs);
+      setFat(p.fat || fat);
+      setSodium(p.sodium || sodium);
+      toast('Product found via barcode ✓', 'success');
+    } else {
+      toast('Product not found. Fill in manually.', 'info');
+    }
+  };
+
+  const handleAdd = () => {
+    const food = {
+      id:          `custom-${Date.now()}`,
+      name:        name.trim(),
+      emoji,
+      servingSize: servingSize || '1 serving',
+      calories:    Number(calories) || 0,
+      protein:     Number(protein)  || 0,
+      carbs:       Number(carbs)    || 0,
+      fat:         Number(fat)      || 0,
+      sodium:      Number(sodium)   || 0,
+      notes:       notes.trim(),
+      barcode:     barcode.trim(),
+      source:      'custom',
+    };
+    if (saveReusable) saveCustomFood(food);
+    onAdd(food);
+    onClose();
+  };
+
+  return (
+    <motion.div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }} onClick={onClose} />
+      <motion.div className="relative w-full md:max-w-md rounded-t-3xl md:rounded-3xl overflow-hidden flex flex-col"
+        style={{ background: '#1c1a18', border: '1px solid rgba(255,255,255,0.1)', maxHeight: '92svh' }}
+        initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }}>
+
+        {/* Handle */}
+        <div className="flex justify-center pt-3 pb-1 flex-shrink-0 md:hidden">
+          <div className="w-10 h-1 rounded-full" style={{ background: 'rgba(255,255,255,0.18)' }} />
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 flex-shrink-0"
+          style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+          <div className="flex items-center gap-2">
+            <PenLine size={15} style={{ color: '#f59e0b' }} />
+            <h2 className="font-bold text-sm" style={{ color: '#f5f4f2' }}>Add Custom Food</h2>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center"
+            style={{ background: 'rgba(255,255,255,0.08)' }}>
+            <X size={14} style={{ color: '#78716c' }} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+          {/* Name + emoji */}
+          <div className="flex gap-2">
+            <input value={emoji} onChange={e => setEmoji(e.target.value)}
+              className="w-14 text-center py-2.5 rounded-xl text-xl outline-none flex-shrink-0"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#f5f4f2' }}
+              maxLength={2} />
+            <input value={name} onChange={e => setName(e.target.value)}
+              placeholder="Food name *"
+              className="flex-1 px-3.5 py-2.5 rounded-xl text-sm outline-none"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#f5f4f2' }} />
+          </div>
+
+          {/* Serving size */}
+          <input value={servingSize} onChange={e => setServingSize(e.target.value)}
+            placeholder="Serving size (e.g. 1 cup, 100g)"
+            className="w-full px-3.5 py-2.5 rounded-xl text-sm outline-none"
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#f5f4f2' }} />
+
+          {/* Macros */}
+          <div>
+            <p className="text-xs font-medium mb-2" style={{ color: '#57534e' }}>Nutrition facts (per serving)</p>
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <div className="col-span-2">
+                <NumField label="Calories *" value={calories} onChange={setCalories} unit="kcal" color="#f97316" />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <NumField label="Protein"  value={protein} onChange={setProtein} unit="g" color="#f59e0b" />
+              <NumField label="Carbs"    value={carbs}   onChange={setCarbs}   unit="g" color="#10b981" />
+              <NumField label="Fat"      value={fat}     onChange={setFat}     unit="g" color="#3b82f6" />
+            </div>
+            <div className="flex gap-2 mt-2">
+              <NumField label="Sodium (optional)"  value={sodium} onChange={setSodium} unit="mg" color="#8b5cf6" />
+            </div>
+          </div>
+
+          {/* Notes */}
+          <input value={notes} onChange={e => setNotes(e.target.value)}
+            placeholder="Notes (optional)"
+            className="w-full px-3.5 py-2.5 rounded-xl text-sm outline-none"
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#f5f4f2' }} />
+
+          {/* Barcode */}
+          <div>
+            <p className="text-xs font-medium mb-1.5" style={{ color: '#57534e' }}>Barcode (optional)</p>
+            <div className="flex gap-2">
+              <input value={barcode} onChange={e => setBarcode(e.target.value)}
+                placeholder="Enter barcode number"
+                className="flex-1 px-3.5 py-2.5 rounded-xl text-sm outline-none"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#f5f4f2' }} />
+              <button onClick={lookupBarcode} disabled={!barcode.trim() || barcodeLoading}
+                className="px-3 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 flex-shrink-0 transition-all"
+                style={{ background: barcode.trim() ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.05)', color: barcode.trim() ? '#f59e0b' : '#3d3a36' }}>
+                {barcodeLoading ? <Loader2 size={12} className="animate-spin" /> : <><Barcode size={12} />Lookup</>}
+              </button>
+            </div>
+            <p className="text-[10px] mt-1" style={{ color: '#3d3a36' }}>Camera scanning coming soon — enter manually for now</p>
+          </div>
+
+          {/* Save as reusable */}
+          <button onClick={() => setSaveReusable(r => !r)}
+            className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl transition-all"
+            style={{ background: saveReusable ? 'rgba(245,158,11,0.08)' : 'rgba(255,255,255,0.03)', border: `1px solid ${saveReusable ? 'rgba(245,158,11,0.2)' : 'rgba(255,255,255,0.06)'}` }}>
+            <div className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
+              style={{ background: saveReusable ? '#f59e0b' : 'rgba(255,255,255,0.08)' }}>
+              {saveReusable && <Save size={11} style={{ color: '#000' }} />}
+            </div>
+            <span className="text-sm" style={{ color: saveReusable ? '#f5f4f2' : '#78716c' }}>Save as reusable food</span>
+          </button>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 pb-5 pt-3 flex-shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+          <button onClick={handleAdd} disabled={!isValid}
+            className="w-full py-3.5 rounded-2xl text-sm font-bold transition-all"
+            style={{ background: isValid ? 'linear-gradient(135deg, #f59e0b, #f97316)' : 'rgba(255,255,255,0.06)', color: isValid ? '#000' : '#3d3a36' }}>
+            Add to {MEAL_META[activeMeal]?.label || 'meal'}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ── Label Scanner component ───────────────────────────────────────────────────
+function LabelScanner({ activeMeal, onAdd }) {
+  const [imageFile,    setImageFile]    = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
+  const [parsing,      setParsing]      = useState(false);
+  const [result,       setResult]       = useState(null);
+  const [editResult,   setEditResult]   = useState(null);
+  const [barcodeVal,   setBarcodeVal]   = useState('');
+  const [barcodeLoading, setBarcodeLoading] = useState(false);
+  const fileInputRef = useRef(null);
+  const toast = useToast();
+
+  const handleFile = (file) => {
+    const { valid, reason } = validateImageFile(file);
+    if (!valid) { toast(reason, 'error'); return; }
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+    setResult(null);
+    setEditResult(null);
+  };
+
+  const handleParse = async () => {
+    if (!imageFile) return;
+    setParsing(true);
+    const r = await parseNutritionLabel({ file: imageFile });
+    setParsing(false);
+    setResult(r);
+    setEditResult({ ...r });
+    if (r.foundLabel) {
+      toast(`Extracted with ${r.confidence}% confidence — review below`, 'success');
+    } else {
+      toast(r.failureReason || 'Could not extract. Fill in manually.', 'info');
+    }
+  };
+
+  const handleBarcodeLookup = async () => {
+    if (!barcodeVal.trim()) return;
+    setBarcodeLoading(true);
+    const r = await getProductByBarcode(barcodeVal.trim());
+    setBarcodeLoading(false);
+    if (r.found && r.product) {
+      const p = r.product;
+      const nr = emptyNutritionResult({
+        foundLabel: true,
+        productName: p.name,
+        servingSize: p.servingSize,
+        calories: p.calories, protein: p.protein,
+        carbs: p.carbs, fat: p.fat, sodium: p.sodium,
+        sugar: p.sugar, confidence: 90,
+        barcode: barcodeVal.trim(),
+      });
+      setResult(nr); setEditResult({ ...nr });
+      toast(`Found: ${p.name}`, 'success');
+    } else {
+      toast('Not found. Try a different code or add manually.', 'info');
+    }
+  };
+
+  const handleAddToDay = (saveFood) => {
+    if (!editResult) return;
+    const food = nutritionResultToFood(editResult, {
+      name: editResult.productName || 'Scanned food',
+      emoji: '🏷️',
+    });
+    if (saveFood) saveCustomFood(food);
+    onAdd(food, 1);
+    setImageFile(null); setImagePreview(''); setResult(null); setEditResult(null);
+    toast(`${food.name} added to ${MEAL_META[activeMeal]?.label}`, 'success');
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="rounded-2xl p-4" style={{ background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.15)' }}>
+        <div className="flex items-center gap-2 mb-2">
+          <ScanLine size={15} style={{ color: '#8b5cf6' }} />
+          <p className="text-sm font-semibold" style={{ color: '#f5f4f2' }}>Nutrition Label Scanner</p>
+        </div>
+        <p className="text-xs" style={{ color: '#57534e' }}>
+          Take or upload a photo of a nutrition facts label. AI will extract the values for you.
+          Always review before saving.
+        </p>
+      </div>
+
+      {/* Barcode fallback */}
+      <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+        <div className="flex items-center gap-2 mb-2.5">
+          <Barcode size={13} style={{ color: '#f59e0b' }} />
+          <p className="text-xs font-semibold" style={{ color: '#a8a29e' }}>Or enter barcode number</p>
+        </div>
+        <div className="flex gap-2">
+          <input value={barcodeVal} onChange={e => setBarcodeVal(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleBarcodeLookup()}
+            placeholder="e.g. 049000000443"
+            className="flex-1 px-3 py-2 rounded-xl text-sm outline-none"
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', color: '#f5f4f2' }} />
+          <button onClick={handleBarcodeLookup} disabled={!barcodeVal.trim() || barcodeLoading}
+            className="px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
+            style={{ background: barcodeVal.trim() ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.05)', color: barcodeVal.trim() ? '#f59e0b' : '#3d3a36' }}>
+            {barcodeLoading ? <Loader2 size={12} className="animate-spin" /> : 'Look up'}
+          </button>
+        </div>
+      </div>
+
+      {/* Image upload */}
+      <div>
+        {imagePreview ? (
+          <div className="relative rounded-2xl overflow-hidden mb-3" style={{ maxHeight: 260 }}>
+            <img src={imagePreview} alt="Label" className="w-full object-contain"
+              style={{ maxHeight: 260, background: '#0a0a0a' }} />
+            <button onClick={() => { setImageFile(null); setImagePreview(''); setResult(null); setEditResult(null); }}
+              className="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center"
+              style={{ background: 'rgba(0,0,0,0.7)' }}>
+              <X size={13} style={{ color: '#f5f4f2' }} />
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => fileInputRef.current?.click()}
+            className="w-full rounded-2xl py-12 flex flex-col items-center gap-3 transition-all"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '2px dashed rgba(255,255,255,0.1)' }}>
+            <Camera size={28} style={{ color: '#3d3a36' }} />
+            <div className="text-center">
+              <p className="text-sm font-medium" style={{ color: '#57534e' }}>Upload nutrition label photo</p>
+              <p className="text-xs mt-0.5" style={{ color: '#3d3a36' }}>JPEG · PNG · HEIC · Max 10MB</p>
+            </div>
+          </button>
+        )}
+        <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
+          onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])} />
+      </div>
+
+      {imageFile && !result && (
+        <button onClick={handleParse} disabled={parsing}
+          className="w-full py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 transition-all"
+          style={{ background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)', color: '#fff' }}>
+          {parsing ? <><Loader2 size={16} className="animate-spin" />Extracting…</> : <><ScanLine size={16} />Extract Nutrition Facts</>}
+        </button>
+      )}
+
+      {/* Review extracted data */}
+      {editResult && (
+        <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+          <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+            <p className="text-sm font-semibold flex-1" style={{ color: '#f5f4f2' }}>Review &amp; Edit</p>
+            {editResult.confidence > 0 && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full"
+                style={{
+                  background: editResult.confidence >= 70 ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)',
+                  color:      editResult.confidence >= 70 ? '#10b981' : '#f59e0b',
+                }}>
+                {editResult.confidence}% confidence
+              </span>
+            )}
+          </div>
+          {!editResult.foundLabel && (
+            <div className="px-4 py-2.5 text-xs" style={{ color: '#f59e0b', background: 'rgba(245,158,11,0.06)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              ⚠ {editResult.failureReason || 'Could not extract automatically. Fill in manually.'}
+            </div>
+          )}
+          <div className="p-4 space-y-3">
+            <input value={editResult.productName || ''} onChange={e => setEditResult(r => ({ ...r, productName: e.target.value }))}
+              placeholder="Product name"
+              className="w-full px-3 py-2 rounded-xl text-sm outline-none"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', color: '#f5f4f2' }} />
+            <input value={editResult.servingSize || ''} onChange={e => setEditResult(r => ({ ...r, servingSize: e.target.value }))}
+              placeholder="Serving size"
+              className="w-full px-3 py-2 rounded-xl text-sm outline-none"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', color: '#f5f4f2' }} />
+            <div className="flex gap-2">
+              <NumField label="Calories" value={editResult.calories} onChange={v => setEditResult(r => ({ ...r, calories: v }))} unit="kcal" color="#f97316" />
+              <NumField label="Protein"  value={editResult.protein}  onChange={v => setEditResult(r => ({ ...r, protein: v }))}  unit="g"    color="#f59e0b" />
+            </div>
+            <div className="flex gap-2">
+              <NumField label="Carbs" value={editResult.carbs} onChange={v => setEditResult(r => ({ ...r, carbs: v }))} unit="g" color="#10b981" />
+              <NumField label="Fat"   value={editResult.fat}   onChange={v => setEditResult(r => ({ ...r, fat: v }))}   unit="g" color="#3b82f6" />
+              <NumField label="Sodium" value={editResult.sodium} onChange={v => setEditResult(r => ({ ...r, sodium: v }))} unit="mg" color="#8b5cf6" />
+            </div>
+          </div>
+          <div className="px-4 pb-4 flex gap-2">
+            <button onClick={() => handleAddToDay(true)}
+              className="flex-1 py-3 rounded-xl text-sm font-bold transition-all"
+              style={{ background: 'linear-gradient(135deg, #f59e0b, #f97316)', color: '#000' }}>
+              Save & Add to {MEAL_META[activeMeal]?.label}
+            </button>
+            <button onClick={() => handleAddToDay(false)}
+              className="px-3 py-3 rounded-xl text-xs font-medium transition-all"
+              style={{ background: 'rgba(255,255,255,0.06)', color: '#57534e' }}>
+              Add only
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function FoodCalories() {
   const [store, update] = useApexStore();
   const [activeMeal, setActiveMeal] = useState('breakfast');
@@ -152,6 +542,7 @@ export default function FoodCalories() {
   const [nlLoading, setNlLoading]   = useState(false);
   const [log, setLog]               = useState(getFoodLog());
   const [fabVisible, setFabVisible] = useState(false);
+  const [showCustomModal, setShowCustomModal] = useState(false);
   const toast    = useToast();
   const searchRef = useRef(null);
   const debounceRef = useRef(null);
@@ -275,10 +666,11 @@ export default function FoodCalories() {
     toast("Yesterday's meals copied", 'success');
   };
 
-  const mealEntries = log[activeMeal] || [];
-  const mealCal     = mealEntries.reduce((s, e) => s + e.calories, 0);
-  const savedMeals  = getSavedMeals();
-  const recents     = getRecentFoods().slice(0, 15);
+  const mealEntries  = log[activeMeal] || [];
+  const mealCal      = mealEntries.reduce((s, e) => s + e.calories, 0);
+  const savedMeals   = getSavedMeals();
+  const recents      = getRecentFoods().slice(0, 15);
+  const customFoods  = getCustomFoods();
   const showDropdown = query.trim().length > 0;
 
   // Status text shown below search in dropdown
@@ -419,10 +811,16 @@ export default function FoodCalories() {
               </div>
 
               {results.length === 0 && searchPhase !== 'searching' ? (
-                <div className="py-8 text-center">
+                <div className="py-8 text-center px-4">
                   <p className="text-2xl mb-2">🔍</p>
                   <p className="text-sm" style={{ color: '#57534e' }}>No results for "{query}"</p>
-                  <p className="text-xs mt-1" style={{ color: '#3d3a36' }}>Try a different keyword or use AI Log to describe it</p>
+                  <p className="text-xs mt-1 mb-4" style={{ color: '#3d3a36' }}>Try a different keyword or use AI Log to describe it</p>
+                  <button
+                    onClick={() => { setQuery(''); setResults([]); setSearchPhase('idle'); setShowCustomModal(true); }}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all"
+                    style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.2)' }}>
+                    <PenLine size={12} />Create custom food
+                  </button>
                 </div>
               ) : results.map(food => (
                 <SearchResult key={food.id} food={food} activeMeal={activeMeal} onAdd={handleAdd} />
@@ -580,7 +978,80 @@ export default function FoodCalories() {
             </div>
           </div>
         )}
+
+        {/* TAB: Custom */}
+        {activeTab === 'Custom' && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-semibold" style={{ color: '#f5f4f2' }}>My Custom Foods</h3>
+                <p className="text-xs mt-0.5" style={{ color: '#57534e' }}>Foods you've saved for quick reuse</p>
+              </div>
+              <motion.button onClick={() => setShowCustomModal(true)} whileTap={{ scale: 0.95 }}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all min-touch"
+                style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.2)' }}>
+                <Plus size={13} />Add new
+              </motion.button>
+            </div>
+
+            {customFoods.length === 0 ? (
+              <div className="py-14 text-center">
+                <p className="text-4xl mb-3">🏷️</p>
+                <p className="text-sm font-medium mb-1" style={{ color: '#57534e' }}>No custom foods saved yet</p>
+                <p className="text-xs mb-5" style={{ color: '#3d3a36' }}>
+                  Add foods that aren't in the database — home-cooked meals, restaurant favourites, supplements.
+                </p>
+                <motion.button onClick={() => setShowCustomModal(true)} whileTap={{ scale: 0.95 }}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all"
+                  style={{ background: 'linear-gradient(135deg, #f59e0b, #f97316)', color: '#000' }}>
+                  <PenLine size={14} />Create first custom food
+                </motion.button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <AnimatePresence>
+                  {customFoods.map(food => (
+                    <motion.div key={food.id}
+                      initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -10 }}
+                      className="flex items-center gap-3 px-4 py-3 rounded-2xl"
+                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                      <span className="text-2xl flex-shrink-0">{food.emoji || '🏷️'}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate" style={{ color: '#f5f4f2' }}>{food.name}</p>
+                        <p className="text-xs mt-0.5" style={{ color: '#57534e' }}>
+                          {food.servingSize} · {food.calories} cal · {food.protein}g P · {food.carbs}g C · {food.fat}g F
+                        </p>
+                      </div>
+                      <motion.button onClick={() => handleAdd(food, 1)} whileTap={{ scale: 0.88 }}
+                        className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all min-touch"
+                        style={{ background: 'rgba(245,158,11,0.15)' }}>
+                        <Plus size={15} style={{ color: '#f59e0b' }} />
+                      </motion.button>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+                <p className="text-center text-xs pt-2 pb-1" style={{ color: '#3d3a36' }}>{customFoods.length} custom food{customFoods.length !== 1 ? 's' : ''} saved</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB: Scan */}
+        {activeTab === 'Scan' && (
+          <LabelScanner activeMeal={activeMeal} onAdd={handleAdd} />
+        )}
       </div>
+
+      {/* Custom Food Modal */}
+      <AnimatePresence>
+        {showCustomModal && (
+          <CustomFoodModal
+            activeMeal={activeMeal}
+            onClose={() => setShowCustomModal(false)}
+            onAdd={(food) => handleAdd(food, 1)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

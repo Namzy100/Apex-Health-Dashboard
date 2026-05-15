@@ -54,6 +54,10 @@ function defaultStore() {
     goals:         defaultLifeGoals(),
     journalEntries:{},    // { 'YYYY-MM-DD': { text, mood, tags, createdAt } }
     meetings:      [],    // { id, title, date, time, location, notes, link }
+    // ── Food ─────────────────────────────────────────────────────────────────
+    customFoods:   [],    // user-saved custom food items
+    weeklyReviews: [],    // generated weekly review snapshots
+    momentumLog:   {},    // { 'YYYY-MM-DD': { score, breakdown } }
   };
 }
 
@@ -500,6 +504,50 @@ export function deleteJournalEntry(date) {
   const entries = { ...(store.journalEntries || {}) };
   delete entries[date];
   writeStore({ ...store, journalEntries: entries });
+}
+
+// ── Custom foods ──────────────────────────────────────────────────────────────
+
+export function getCustomFoods() {
+  return getOrInitStore().customFoods || [];
+}
+
+export function saveCustomFood(food) {
+  const store = getOrInitStore();
+  const foods = store.customFoods || [];
+  const id = food.id || `custom-${Date.now()}`;
+  const item = { ...food, id, source: 'custom', savedAt: food.savedAt || new Date().toISOString() };
+  const idx = foods.findIndex(f => f.id === id);
+  const updated = idx >= 0 ? foods.map((f, i) => i === idx ? item : f) : [item, ...foods];
+  writeStore({ ...store, customFoods: updated });
+  return item;
+}
+
+export function deleteCustomFood(id) {
+  const store = getOrInitStore();
+  writeStore({ ...store, customFoods: (store.customFoods || []).filter(f => f.id !== id) });
+}
+
+// ── Momentum log ──────────────────────────────────────────────────────────────
+
+export function saveMomentumScore(date = todayStr(), score) {
+  const store = getOrInitStore();
+  const log = { ...(store.momentumLog || {}), [date]: { ...score, date } };
+  writeStore({ ...store, momentumLog: log });
+}
+
+// ── Weekly reviews ────────────────────────────────────────────────────────────
+
+export function saveWeeklyReview(review) {
+  const store = getOrInitStore();
+  const reviews = store.weeklyReviews || [];
+  const idx = reviews.findIndex(r => r.weekStart === review.weekStart);
+  const updated = idx >= 0 ? reviews.map((r, i) => i === idx ? review : r) : [review, ...reviews];
+  writeStore({ ...store, weeklyReviews: updated });
+}
+
+export function getWeeklyReviews() {
+  return getOrInitStore().weeklyReviews || [];
 }
 
 // ── Export / Import ───────────────────────────────────────────────────────────
