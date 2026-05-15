@@ -4,8 +4,10 @@ import {
   LayoutDashboard, Scale, Utensils, Footprints, Dumbbell,
   BookOpen, Camera, Sun, Lightbulb, Settings, Flame,
   UtensilsCrossed, CalendarDays, ChefHat, Download,
+  Cloud, CloudOff, Loader2,
 } from 'lucide-react';
 import { useApexStore, getDailyTotals } from '../store/apexStore';
+import { useSyncContext, SYNC_STATUS } from '../contexts/SyncContext';
 
 const TOP_LINKS = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -70,6 +72,26 @@ function NavItem({ to, icon: Icon, label, badge, index }) {
         )}
       </NavLink>
     </motion.div>
+  );
+}
+
+const SYNC_CFG = {
+  [SYNC_STATUS.IDLE]:    { Icon: CloudOff, label: 'Local only', color: '#3d3835' },
+  [SYNC_STATUS.SYNCING]: { Icon: Loader2,  label: 'Syncing…',   color: '#f59e0b', spin: true },
+  [SYNC_STATUS.SYNCED]:  { Icon: Cloud,    label: 'Synced',     color: '#10b981' },
+  [SYNC_STATUS.ERROR]:   { Icon: CloudOff, label: 'Sync error', color: '#ef4444' },
+  [SYNC_STATUS.OFFLINE]: { Icon: CloudOff, label: 'Offline',    color: '#57534e' },
+};
+
+function SyncIndicator() {
+  const { syncStatus, configured } = useSyncContext();
+  if (!configured) return null;
+  const { Icon, label, color, spin } = SYNC_CFG[syncStatus] || SYNC_CFG[SYNC_STATUS.IDLE];
+  return (
+    <div className="flex items-center gap-1.5 mb-1.5 px-0.5">
+      <Icon size={9} className={spin ? 'animate-spin' : ''} style={{ color, flexShrink: 0 }} />
+      <span style={{ fontSize: 9, color }}>{label}</span>
+    </div>
   );
 }
 
@@ -144,6 +166,7 @@ export default function Sidebar() {
 
       {/* Bottom profile card */}
       <div className="px-3 pb-4 pt-2">
+        <SyncIndicator />
         {/* Streak row */}
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-1.5">

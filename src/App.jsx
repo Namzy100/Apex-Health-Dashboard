@@ -1,10 +1,14 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ToastProvider } from './components/Toast';
 import Sidebar from './components/Sidebar';
 import MobileNav from './components/MobileNav';
+import { SyncProvider, useSyncContext } from './contexts/SyncContext';
+import { useApexStore } from './store/apexStore';
+
+// ── PWA update banner ─────────────────────────────────────────────────────────
 
 function PWAUpdater() {
   const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW();
@@ -44,10 +48,21 @@ function PWAUpdater() {
   );
 }
 
-// Eagerly loaded — tiny, always needed
+// ── Cloud auto-save watcher ───────────────────────────────────────────────────
+// Calls the debounced push whenever the local store object changes reference.
+
+function StoreWatcher() {
+  const [store] = useApexStore();
+  const { scheduleSave } = useSyncContext();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { scheduleSave(); }, [store]);
+  return null;
+}
+
+// ── Pages ─────────────────────────────────────────────────────────────────────
+
 import Dashboard from './pages/Dashboard';
 
-// Lazy-loaded — heavy pages, split into separate chunks
 const FoodCalories  = lazy(() => import('./pages/FoodCalories'));
 const CookSomething = lazy(() => import('./pages/CookSomething'));
 const WeightTracker = lazy(() => import('./pages/WeightTracker'));
@@ -75,36 +90,41 @@ function PageSkeleton() {
   );
 }
 
+// ── App ───────────────────────────────────────────────────────────────────────
+
 export default function App() {
   return (
     <BrowserRouter>
-      <ToastProvider>
-        <div className="flex" style={{ minHeight: '100svh', background: '#111010' }}>
-          <Sidebar />
-          <main className="flex-1 overflow-x-hidden md:ml-[220px]">
-            <Suspense fallback={<PageSkeleton />}>
-              <Routes>
-                <Route path="/"        element={<Dashboard />} />
-                <Route path="/food"    element={<FoodCalories />} />
-                <Route path="/cook"    element={<CookSomething />} />
-                <Route path="/weight"  element={<WeightTracker />} />
-                <Route path="/macros"  element={<MacroTracker />} />
-                <Route path="/activity" element={<Activity />} />
-                <Route path="/lifting" element={<Lifting />} />
-                <Route path="/recipes" element={<Recipes />} />
-                <Route path="/calendar" element={<Calendar />} />
-                <Route path="/progress" element={<Progress />} />
-                <Route path="/summer"  element={<SummerPlans />} />
-                <Route path="/insights" element={<Insights />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="/import"   element={<Import />} />
-              </Routes>
-            </Suspense>
-          </main>
-          <MobileNav />
-          <PWAUpdater />
-        </div>
-      </ToastProvider>
+      <SyncProvider>
+        <ToastProvider>
+          <div className="flex" style={{ minHeight: '100svh', background: '#111010' }}>
+            <StoreWatcher />
+            <Sidebar />
+            <main className="flex-1 overflow-x-hidden md:ml-[220px]">
+              <Suspense fallback={<PageSkeleton />}>
+                <Routes>
+                  <Route path="/"         element={<Dashboard />} />
+                  <Route path="/food"     element={<FoodCalories />} />
+                  <Route path="/cook"     element={<CookSomething />} />
+                  <Route path="/weight"   element={<WeightTracker />} />
+                  <Route path="/macros"   element={<MacroTracker />} />
+                  <Route path="/activity" element={<Activity />} />
+                  <Route path="/lifting"  element={<Lifting />} />
+                  <Route path="/recipes"  element={<Recipes />} />
+                  <Route path="/calendar" element={<Calendar />} />
+                  <Route path="/progress" element={<Progress />} />
+                  <Route path="/summer"   element={<SummerPlans />} />
+                  <Route path="/insights" element={<Insights />} />
+                  <Route path="/settings" element={<Settings />} />
+                  <Route path="/import"   element={<Import />} />
+                </Routes>
+              </Suspense>
+            </main>
+            <MobileNav />
+            <PWAUpdater />
+          </div>
+        </ToastProvider>
+      </SyncProvider>
     </BrowserRouter>
   );
 }

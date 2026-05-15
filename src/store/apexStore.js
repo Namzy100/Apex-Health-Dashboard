@@ -13,6 +13,10 @@ const todayStr = () => new Date().toISOString().slice(0, 10);
 
 function defaultStore() {
   return {
+    _meta: {
+      lastUpdatedAt: new Date().toISOString(),
+      version: 1,
+    },
     settings: {
       name: 'Naman',
       startWeight: 185,    // canonical: lbs
@@ -139,7 +143,15 @@ export function readStore() {
 }
 
 export function writeStore(data) {
-  localStorage.setItem(KEY, JSON.stringify(data));
+  const stamped = {
+    ...data,
+    _meta: {
+      ...(data._meta || {}),
+      lastUpdatedAt: new Date().toISOString(),
+      version: 1,
+    },
+  };
+  localStorage.setItem(KEY, JSON.stringify(stamped));
 }
 
 export function getOrInitStore() {

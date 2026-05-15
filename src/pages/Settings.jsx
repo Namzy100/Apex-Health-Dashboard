@@ -4,6 +4,7 @@ import {
   Settings as SettingsIcon, User, Target, Database, Download,
   Trash2, Save, CheckCircle, BarChart2, RefreshCw, FileJson,
   Smartphone, Globe, Loader2, ToggleLeft, ToggleRight, FlaskConical,
+  Cloud, CloudOff, Eye, EyeOff, Upload, ArrowDownToLine, AlertTriangle, Link,
 } from 'lucide-react';
 import { useApexStore, exportStoreAsJSON, exportWeightCSV, resetStore } from '../store/apexStore';
 import { useToast } from '../components/Toast';
@@ -11,6 +12,8 @@ import { searchAllFoods, getSourceAvailability } from '../services/foodSearch';
 import { packagedFoods } from '../data/samplePackagedFoods';
 import { restaurantFoods } from '../data/sampleRestaurantFoods';
 import { lbsToKg, kgToLbs, inchesToCm, cmToInches } from '../utils/unitConversions';
+import { useSyncContext, SYNC_STATUS } from '../contexts/SyncContext';
+import { getGistConfig, saveGistConfig, testGistConnection } from '../services/gistSync';
 
 const IS_DEV = import.meta.env.DEV;
 
@@ -166,6 +169,235 @@ function FoodDatabaseCard() {
             <p className="text-[10px]" style={{ color: '#57534e' }}>No results — check API keys or try another query.</p>
           )}
         </motion.div>
+      )}
+    </motion.div>
+  );
+}
+
+// ── Cloud Sync Card (GitHub Gist) ─────────────────────────────────────────────
+
+const STATUS_CFG = {
+  [SYNC_STATUS.IDLE]:    { color: '#57534e', dot: '#57534e', label: 'Not synced' },
+  [SYNC_STATUS.SYNCING]: { color: '#f59e0b', dot: '#f59e0b', label: 'Syncing…'  },
+  [SYNC_STATUS.SYNCED]:  { color: '#10b981', dot: '#10b981', label: 'Synced'    },
+  [SYNC_STATUS.ERROR]:   { color: '#ef4444', dot: '#ef4444', label: 'Error'     },
+  [SYNC_STATUS.OFFLINE]: { color: '#78716c', dot: '#78716c', label: 'Offline'   },
+};
+
+function GistSyncCard() {
+  const { syncStatus, lastSynced, syncError, configured, syncNow, pushNow, pullNow, refreshConfigured } = useSyncContext();
+  const toast = useToast();
+
+  const cfg = getGistConfig();
+  const [token,  setToken]  = useState(cfg.token);
+  const [gistId, setGistId] = useState(cfg.gistId);
+  const [showToken, setShowToken] = useState(false);
+  const [testing,   setTesting]   = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [activeOp,  setActiveOp]  = useState(null); // 'sync' | 'push' | 'pull'
+  const [configDirty, setConfigDirty] = useState(false);
+
+  const handleTokenChange  = v => { setToken(v);  setConfigDirty(true); setTestResult(null); };
+  const handleGistIdChange = v => { setGistId(v); setConfigDirty(true); setTestResult(null); };
+
+  const handleSaveConfig = () => {
+    saveGistConfig(token, gistId);
+    refreshConfigured();
+    setConfigDirty(false);
+    setTestResult(null);
+    toast('Config saved', 'success');
+  };
+
+  const handleTest = async () => {
+    if (configDirty) { toast('Save config first', 'info'); return; }
+    setTesting(true);
+    setTestResult(null);
+    const res = await testGistConnection();
+    setTestResult(res);
+    setTesting(false);
+  };
+
+  const handleOp = async (name, fn) => {
+    setActiveOp(name);
+    try {
+      await fn();
+      const labels = { sync: 'Synced ✓', push: 'Pushed to Gist ✓', pull: 'Pulling from Gist — reloading…' };
+      toast(labels[name] || 'Done', 'success');
+    } catch (err) {
+      toast(err.message || 'Sync failed', 'error');
+    } finally {
+      setActiveOp(null);
+    }
+  };
+
+  const fmtTime = iso => {
+    if (!iso) return 'Never';
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      + ' · ' + d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+
+  const sc = STATUS_CFG[syncStatus] || STATUS_CFG[SYNC_STATUS.IDLE];
+  const busy = !!activeOp || syncStatus === SYNC_STATUS.SYNCING;
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18, duration: 0.4 }}
+      className="rounded-2xl p-5" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+
+      {/* Header row */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(99,102,241,0.15)' }}>
+            {configured ? <Cloud size={14} style={{ color: '#818cf8' }} /> : <CloudOff size={14} style={{ color: '#57534e' }} />}
+          </div>
+          <h2 className="text-sm font-semibold" style={{ color: '#f5f4f2' }}>Cloud Sync</h2>
+        </div>
+        {configured && (
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+            style={{ background: `${sc.dot}18`, border: `1px solid ${sc.dot}30` }}>
+            {syncStatus === SYNC_STATUS.SYNCING
+              ? <Loader2 size={9} className="animate-spin" style={{ color: sc.dot }} />
+              : <div className="w-1.5 h-1.5 rounded-full" style={{ background: sc.dot }} />}
+            <span className="text-xs" style={{ color: sc.color }}>{sc.label}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Personal use warning */}
+      <div className="flex items-start gap-2 p-3 rounded-xl mb-4"
+        style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.12)' }}>
+        <AlertTriangle size={12} style={{ color: '#f59e0b', flexShrink: 0, marginTop: 1 }} />
+        <p className="text-[10px] leading-relaxed" style={{ color: '#a8896e' }}>
+          Personal use only. Token stored in this browser only. Never shared, never logged.
+          Use a <strong>private</strong> Gist.
+        </p>
+      </div>
+
+      {/* Config fields */}
+      <div className="space-y-3 mb-4">
+        <div>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: '#57534e' }}>
+            GitHub Personal Access Token
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type={showToken ? 'text' : 'password'}
+              value={token}
+              onChange={e => handleTokenChange(e.target.value)}
+              placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+              className="flex-1 px-3 py-2.5 rounded-xl text-xs font-mono outline-none"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#f5f4f2' }}
+            />
+            <button onClick={() => setShowToken(v => !v)}
+              className="flex-shrink-0 p-2.5 rounded-xl"
+              style={{ background: 'rgba(255,255,255,0.05)', color: '#57534e' }}>
+              {showToken ? <EyeOff size={13} /> : <Eye size={13} />}
+            </button>
+          </div>
+          <p className="text-[10px] mt-1" style={{ color: '#3d3a36' }}>
+            Fine-grained token with Gist read+write scope
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: '#57534e' }}>Gist ID</label>
+          <input
+            type="text"
+            value={gistId}
+            onChange={e => handleGistIdChange(e.target.value)}
+            placeholder="a1b2c3d4e5f6..."
+            className="w-full px-3 py-2.5 rounded-xl text-xs font-mono outline-none"
+            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#f5f4f2' }}
+          />
+          <p className="text-[10px] mt-1" style={{ color: '#3d3a36' }}>
+            From gist.github.com — the hash in the URL of your private Gist
+          </p>
+        </div>
+      </div>
+
+      {/* Save + Test row */}
+      <div className="flex gap-2 mb-4">
+        <button onClick={handleSaveConfig} disabled={!token || !gistId}
+          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all"
+          style={{
+            background: configDirty ? 'linear-gradient(135deg, #6366f1, #818cf8)' : 'rgba(99,102,241,0.12)',
+            color: configDirty ? '#fff' : '#818cf8',
+            opacity: (!token || !gistId) ? 0.4 : 1,
+          }}>
+          <CheckCircle size={12} />Save Config
+        </button>
+        <button onClick={handleTest} disabled={testing || configDirty || !token || !gistId}
+          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-medium transition-all"
+          style={{
+            background: 'rgba(255,255,255,0.05)',
+            color: '#a8a29e',
+            border: '1px solid rgba(255,255,255,0.08)',
+            opacity: (testing || configDirty || !token || !gistId) ? 0.4 : 1,
+          }}>
+          {testing ? <Loader2 size={12} className="animate-spin" /> : <Link size={12} />}
+          Test Connection
+        </button>
+      </div>
+
+      {/* Test result */}
+      {testResult && (
+        <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+          className="mb-4 p-3 rounded-xl"
+          style={{
+            background: testResult.ok ? 'rgba(16,185,129,0.07)' : 'rgba(239,68,68,0.07)',
+            border: `1px solid ${testResult.ok ? 'rgba(16,185,129,0.18)' : 'rgba(239,68,68,0.15)'}`,
+          }}>
+          <p className="text-xs font-medium mb-1" style={{ color: testResult.ok ? '#10b981' : '#ef4444' }}>
+            {testResult.ok ? '✓ Connected' : '✗ ' + testResult.error}
+          </p>
+          {testResult.ok && (
+            <p className="text-[10px]" style={{ color: '#57534e' }}>
+              {testResult.hasFile ? `apex-data.json found` : 'No apex-data.json yet — first Sync Now will create it'}
+              {testResult.isPublic && <span style={{ color: '#f59e0b' }}> · Warning: Gist is public!</span>}
+            </p>
+          )}
+        </motion.div>
+      )}
+
+      {/* Sync actions — only when configured */}
+      {configured && (
+        <>
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            <button onClick={() => handleOp('sync', syncNow)} disabled={busy}
+              className="flex flex-col items-center gap-1.5 px-2 py-2.5 rounded-xl text-[10px] font-medium transition-all"
+              style={{ background: 'rgba(99,102,241,0.1)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.18)', opacity: busy ? 0.5 : 1 }}>
+              {activeOp === 'sync' ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+              Sync Now
+            </button>
+            <button onClick={() => handleOp('push', pushNow)} disabled={busy}
+              className="flex flex-col items-center gap-1.5 px-2 py-2.5 rounded-xl text-[10px] font-medium transition-all"
+              style={{ background: 'rgba(245,158,11,0.08)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.15)', opacity: busy ? 0.5 : 1 }}>
+              {activeOp === 'push' ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+              Push Local
+            </button>
+            <button onClick={() => handleOp('pull', pullNow)} disabled={busy}
+              className="flex flex-col items-center gap-1.5 px-2 py-2.5 rounded-xl text-[10px] font-medium transition-all"
+              style={{ background: 'rgba(16,185,129,0.08)', color: '#10b981', border: '1px solid rgba(16,185,129,0.15)', opacity: busy ? 0.5 : 1 }}>
+              {activeOp === 'pull' ? <Loader2 size={13} className="animate-spin" /> : <ArrowDownToLine size={13} />}
+              Pull Cloud
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between px-0.5">
+            <span className="text-[10px]" style={{ color: '#3d3a36' }}>
+              Last synced: <span style={{ color: '#57534e' }}>{fmtTime(lastSynced)}</span>
+            </span>
+            {syncError && (
+              <span className="text-[10px]" style={{ color: '#ef4444' }}>
+                {syncError.slice(0, 40)}
+              </span>
+            )}
+          </div>
+
+          <p className="text-[10px] mt-2 px-0.5 leading-relaxed" style={{ color: '#3d3a36' }}>
+            Sync Now merges both (newest wins). Push forces local → Gist. Pull forces Gist → local (reloads app).
+          </p>
+        </>
       )}
     </motion.div>
   );
@@ -359,6 +591,9 @@ export default function Settings() {
           {saved ? <><CheckCircle size={15} />Saved!</> : <><Save size={15} />Save Settings</>}
         </button>
 
+        {/* Cloud Sync */}
+        <GistSyncCard />
+
         {/* API Status */}
         <Card delay={0.2}>
           <div className="flex items-center justify-between mb-4">
@@ -437,7 +672,7 @@ export default function Settings() {
         <Card delay={0.3}>
           <SectionHeader icon={Download} title="Data & Export" color="#a78bfa" />
           <p className="text-xs mb-4" style={{ color: '#57534e' }}>
-            All data is stored locally in your browser. Nothing is sent to a server.
+            All data lives in your browser. GitHub Gist sync is opt-in — configure above.
           </p>
           <div className="grid grid-cols-2 gap-2">
             <button onClick={handleExportJSON}
