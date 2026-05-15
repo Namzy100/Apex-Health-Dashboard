@@ -3,10 +3,13 @@ import { motion } from 'framer-motion';
 import {
   Settings as SettingsIcon, User, Target, Database, Download,
   Trash2, Save, CheckCircle, BarChart2, RefreshCw, FileJson,
-  Smartphone, Globe, Loader2, ToggleLeft, ToggleRight,
+  Smartphone, Globe, Loader2, ToggleLeft, ToggleRight, FlaskConical,
 } from 'lucide-react';
 import { useApexStore, exportStoreAsJSON, exportWeightCSV, resetStore } from '../store/apexStore';
 import { useToast } from '../components/Toast';
+import { searchAllFoods, getSourceAvailability } from '../services/foodSearch';
+import { packagedFoods } from '../data/samplePackagedFoods';
+import { restaurantFoods } from '../data/sampleRestaurantFoods';
 
 function SectionHeader({ icon: Icon, title, color = '#f59e0b' }) {
   return (
@@ -82,6 +85,83 @@ function ApiStatusRow({ key: _k, name, status, meta }) {
         </span>
       </div>
     </div>
+  );
+}
+
+function FoodDatabaseCard() {
+  const [testResults, setTestResults] = useState(null);
+  const [testing, setTesting]         = useState(false);
+  const avail = getSourceAvailability();
+  const localCount = packagedFoods.length + restaurantFoods.length;
+
+  const runTest = async () => {
+    setTesting(true);
+    setTestResults(null);
+    const counts = {};
+    const all = await searchAllFoods('coffee', {
+      savedMeals: [], recentFoods: [], remote: true,
+      onProgress: () => {},
+    });
+    all.forEach(f => { counts[f.source] = (counts[f.source] || 0) + 1; });
+    setTestResults({ counts, total: all.length });
+    setTesting(false);
+  };
+
+  const sourceRows = [
+    { key: 'local',         label: 'Local Database',       available: true,             note: `${localCount} foods` },
+    { key: 'usda',          label: 'USDA FoodData Central', available: avail.usda,       note: avail.usda ? 'Key set' : 'Set VITE_USDA_API_KEY' },
+    { key: 'openfoodfacts', label: 'Open Food Facts',       available: true,             note: 'No key needed' },
+    { key: 'spoonacular',   label: 'Spoonacular',           available: avail.spoonacular, note: avail.spoonacular ? 'Key set' : 'Set VITE_SPOONACULAR_API_KEY' },
+  ];
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.22, duration: 0.4 }}
+      className="rounded-2xl p-5" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(16,185,129,0.15)' }}>
+            <Database size={14} style={{ color: '#10b981' }} />
+          </div>
+          <h2 className="text-sm font-semibold" style={{ color: '#f5f4f2' }}>Food Database</h2>
+        </div>
+        <button onClick={runTest} disabled={testing}
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all min-touch"
+          style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.2)' }}>
+          {testing ? <Loader2 size={11} className="animate-spin" /> : <FlaskConical size={11} />}
+          Test Search
+        </button>
+      </div>
+
+      <div className="space-y-2 mb-4">
+        {sourceRows.map(row => (
+          <div key={row.key} className="flex items-center justify-between p-2.5 rounded-xl"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="flex items-center gap-2">
+              <div className="w-1.5 h-1.5 rounded-full" style={{ background: row.available ? '#10b981' : '#57534e' }} />
+              <span className="text-xs" style={{ color: '#a8a29e' }}>{row.label}</span>
+            </div>
+            <span className="text-[10px]" style={{ color: row.available ? '#57534e' : '#3d3835' }}>{row.note}</span>
+          </div>
+        ))}
+      </div>
+
+      {testResults && (
+        <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+          className="p-3 rounded-xl" style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.15)' }}>
+          <p className="text-xs font-semibold mb-2" style={{ color: '#f59e0b' }}>
+            Search "coffee" → {testResults.total} results
+          </p>
+          {Object.entries(testResults.counts).map(([src, count]) => (
+            <p key={src} className="text-[10px]" style={{ color: '#78716c' }}>
+              {src}: {count} result{count !== 1 ? 's' : ''}
+            </p>
+          ))}
+          {testResults.total === 0 && (
+            <p className="text-[10px]" style={{ color: '#57534e' }}>No results — check API keys or try another query.</p>
+          )}
+        </motion.div>
+      )}
+    </motion.div>
   );
 }
 
@@ -270,6 +350,9 @@ export default function Settings() {
             ))}
           </div>
         </Card>
+
+        {/* Food Database */}
+        <FoodDatabaseCard />
 
         {/* App Mode */}
         <Card delay={0.25}>

@@ -92,13 +92,47 @@ npm run preview
 
 ## Deployment
 
-The frontend (`dist/`) can be deployed to any static host (Vercel, Netlify, Cloudflare Pages).
+### Vercel (frontend)
 
-The Express server (`server/index.js`) must be deployed separately to a Node host (Railway, Fly.io, Render, etc.) so OpenAI calls remain server-side.
+Deploy the frontend to Vercel normally (`vercel deploy` or connect the repo). Set these environment variables in the Vercel dashboard:
 
-**Environment variables on the host:**
-- Set all the same vars from `.env.local` in your host's dashboard.
-- Update the Vite proxy target in `vite.config.js` (or set `VITE_API_URL`) to point to your deployed server URL in production.
+```
+VITE_USDA_API_KEY          ← required for live USDA food search
+VITE_SPOONACULAR_API_KEY   ← required for Spoonacular recipes
+VITE_NUTRITIONIX_APP_ID    ← optional
+VITE_NUTRITIONIX_API_KEY   ← optional
+```
+
+**Do NOT add `OPENAI_API_KEY` to Vercel frontend env vars** — it would be exposed in the browser bundle. OpenAI must go through the Express backend (see below).
+
+**Important:** Vercel does **not** automatically run `server/index.js`. The Express server is a separate process and will not be available at `/api/*` when deployed to Vercel's static/serverless hosting. This means:
+
+- Food search (USDA, Open Food Facts) works — those use `VITE_` keys in the browser.
+- AI recipe builder and NL food logging will fall back to **local heuristics** on Vercel unless you deploy the backend separately.
+- The Settings page will show a warning: "API server not running."
+
+### Backend (for AI features on Vercel)
+
+To enable OpenAI features in production, deploy the Express server separately:
+
+**Option A — Railway / Fly.io / Render (recommended):**
+```bash
+# Deploy server/index.js as a Node app
+# Set environment variables: OPENAI_API_KEY + all VITE_ keys
+```
+
+Then update `vite.config.js` proxy target to your deployed backend URL before building for production.
+
+**Option B — Vercel Serverless Functions (future):**
+Migrate `server/index.js` routes to `api/` directory as Vercel Functions (`.js` files). The existing Express routes map 1:1 to serverless function handlers.
+
+### Graceful fallback
+
+If the backend is unavailable (e.g. Vercel without a separate Express deployment):
+- AI Log tab falls back to local keyword matching.
+- Cook Something falls back to 4 hardcoded high-protein recipes.
+- Settings shows "API server not running — AI backend not deployed. Local fallback active."
+- All food tracking, weight logging, and charting continue to work fully offline.
 
 ---
 

@@ -1,23 +1,21 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, X, Clock, Star, Copy, Mic, Zap, ChevronDown, Check } from 'lucide-react';
+import { Search, Plus, X, Clock, Star, Copy, Zap, Loader2 } from 'lucide-react';
 import {
   useApexStore, addFoodEntry, removeFoodEntry, getFoodLog,
   getDailyTotals, getRecentFoods, getSavedMeals, copyYesterdayMeals,
 } from '../store/apexStore';
-import { searchLocalFoods } from '../services/localFoodDatabase';
+import { searchAllFoods, SOURCE_META } from '../services/foodSearch';
 import { parseNaturalLanguageLog } from '../services/aiService';
 import { useToast } from '../components/Toast';
-import { profile } from '../data/sampleData';
 
 const MEALS = ['breakfast', 'lunch', 'dinner', 'snacks'];
 const MEAL_META = {
   breakfast: { label: 'Breakfast', emoji: '🌅', color: '#f59e0b' },
-  lunch: { label: 'Lunch', emoji: '☀️', color: '#10b981' },
-  dinner: { label: 'Dinner', emoji: '🌙', color: '#6366f1' },
-  snacks: { label: 'Snacks', emoji: '🍎', color: '#f97316' },
+  lunch:     { label: 'Lunch',     emoji: '☀️',  color: '#10b981' },
+  dinner:    { label: 'Dinner',    emoji: '🌙',  color: '#6366f1' },
+  snacks:    { label: 'Snacks',    emoji: '🍎',  color: '#f97316' },
 };
-
 const TABS = ['Quick Add', 'Saved Meals', 'Recent', 'AI Log'];
 
 function MacroRing({ pct, color, size = 36, stroke = 3 }) {
@@ -25,11 +23,22 @@ function MacroRing({ pct, color, size = 36, stroke = 3 }) {
   const circ = 2 * Math.PI * r;
   return (
     <svg width={size} height={size}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={stroke} />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={stroke} />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
         strokeDasharray={circ} strokeDashoffset={circ * (1 - Math.min(pct, 1))}
-        strokeLinecap="round" transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+        strokeLinecap="round" transform={`rotate(-90 ${size/2} ${size/2})`} />
     </svg>
+  );
+}
+
+function SourceBadge({ source }) {
+  const meta = SOURCE_META[source];
+  if (!meta) return null;
+  return (
+    <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0"
+      style={{ background: `${meta.color}18`, color: meta.color, border: `1px solid ${meta.color}30` }}>
+      {meta.label}
+    </span>
   );
 }
 
@@ -47,7 +56,6 @@ function FoodEntryRow({ entry, onRemove }) {
       </div>
       <div className="flex items-center gap-3 flex-shrink-0">
         <span className="text-xs font-medium" style={{ color: '#a8a29e' }}>{entry.protein}g P</span>
-        {/* Always visible on mobile, hover-only on desktop */}
         <button onClick={() => onRemove(entry.id)}
           className="w-8 h-8 rounded-full flex items-center justify-center transition-all md:opacity-0 md:group-hover:opacity-100 min-touch"
           style={{ background: 'rgba(239,68,68,0.15)' }}>
@@ -61,32 +69,37 @@ function FoodEntryRow({ entry, onRemove }) {
 function SearchResult({ food, activeMeal, onAdd }) {
   const [qty, setQty] = useState(1);
   const calories = Math.round((food.calories || 0) * qty);
-  const protein = Math.round((food.protein || 0) * qty * 10) / 10;
-
+  const protein  = Math.round((food.protein  || 0) * qty * 10) / 10;
   return (
-    <div className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-white/[0.03]">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+      className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-white/[0.03] active:bg-white/[0.05]">
       <span className="text-2xl flex-shrink-0">{food.emoji || '🍽️'}</span>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate" style={{ color: '#f5f4f2' }}>{food.name}</p>
-        <p className="text-xs" style={{ color: '#57534e' }}>
-          {food.brand || food.restaurant || ''}{(food.brand || food.restaurant) ? ' · ' : ''}{food.servingSize} · {calories} cal · {protein}g P
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <p className="text-sm font-medium truncate" style={{ color: '#f5f4f2' }}>{food.name}</p>
+          <SourceBadge source={food.source} />
+        </div>
+        <p className="text-xs mt-0.5" style={{ color: '#57534e' }}>
+          {food.brand || food.restaurant || ''}{(food.brand || food.restaurant) ? ' · ' : ''}
+          {food.servingSize} · {calories} cal · {protein}g P
         </p>
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
-        <div className="flex items-center rounded-xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="flex items-center rounded-xl overflow-hidden"
+          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
           <button onClick={() => setQty(q => Math.max(0.5, Math.round((q - 0.5) * 2) / 2))}
-            className="px-2.5 py-1.5 text-sm transition-colors hover:bg-white/5" style={{ color: '#78716c' }}>−</button>
+            className="px-2.5 py-1.5 text-sm transition-colors hover:bg-white/5 min-touch" style={{ color: '#78716c' }}>−</button>
           <span className="text-xs font-semibold px-2" style={{ color: '#f5f4f2', minWidth: 28, textAlign: 'center' }}>{qty}</span>
           <button onClick={() => setQty(q => Math.round((q + 0.5) * 2) / 2)}
-            className="px-2.5 py-1.5 text-sm transition-colors hover:bg-white/5" style={{ color: '#78716c' }}>+</button>
+            className="px-2.5 py-1.5 text-sm transition-colors hover:bg-white/5 min-touch" style={{ color: '#78716c' }}>+</button>
         </div>
-        <button onClick={() => onAdd(food, qty)}
-          className="w-8 h-8 rounded-full flex items-center justify-center transition-all"
+        <motion.button onClick={() => onAdd(food, qty)} whileTap={{ scale: 0.88 }}
+          className="w-8 h-8 rounded-full flex items-center justify-center transition-all min-touch"
           style={{ background: 'rgba(245,158,11,0.2)' }}>
           <Plus size={14} style={{ color: '#f59e0b' }} />
-        </button>
+        </motion.button>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -117,11 +130,11 @@ function SavedMealCard({ meal, activeMeal, onAdd }) {
           <span style={{ color: '#10b981' }}>{meal.totalProtein}g P</span>
           <span>{meal.totalCarbs}g C · {meal.totalFat}g F</span>
         </div>
-        <button onClick={() => onAdd(meal)}
-          className="w-full rounded-xl py-2 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
+        <motion.button onClick={() => onAdd(meal)} whileTap={{ scale: 0.96 }}
+          className="w-full rounded-xl py-2 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all min-touch"
           style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.18)' }}>
           <Plus size={12} />Add to {MEAL_META[activeMeal]?.label}
-        </button>
+        </motion.button>
       </div>
     </motion.div>
   );
@@ -130,45 +143,93 @@ function SavedMealCard({ meal, activeMeal, onAdd }) {
 export default function FoodCalories() {
   const [store, update] = useApexStore();
   const [activeMeal, setActiveMeal] = useState('breakfast');
-  const [activeTab, setActiveTab] = useState('Quick Add');
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState([]);
-  const [nlQuery, setNlQuery] = useState('');
-  const [nlLoading, setNlLoading] = useState(false);
-  const [log, setLog] = useState(getFoodLog());
-  const toast = useToast();
+  const [activeTab, setActiveTab]   = useState('Quick Add');
+  const [query, setQuery]           = useState('');
+  const [results, setResults]       = useState([]);
+  const [searchPhase, setSearchPhase] = useState('idle'); // idle | searching | done
+  const [remoteCount, setRemoteCount] = useState(0);
+  const [nlQuery, setNlQuery]       = useState('');
+  const [nlLoading, setNlLoading]   = useState(false);
+  const [log, setLog]               = useState(getFoodLog());
+  const [fabVisible, setFabVisible] = useState(false);
+  const toast    = useToast();
   const searchRef = useRef(null);
+  const debounceRef = useRef(null);
 
   const settings = store.settings;
-  const targets = {
+  const targets  = {
     calories: settings.dailyCalorieTarget,
-    protein: settings.dailyProteinTarget,
-    carbs: settings.dailyCarbTarget || 200,
-    fat: settings.dailyFatTarget || 65,
+    protein:  settings.dailyProteinTarget,
+    carbs:    settings.dailyCarbTarget || 200,
+    fat:      settings.dailyFatTarget  || 65,
   };
-
-  const totals = getDailyTotals();
-  const calPct = totals.calories / targets.calories;
-  const pPct = totals.protein / targets.protein;
-  const cPct = totals.carbs / targets.carbs;
-  const fPct = totals.fat / targets.fat;
+  const totals    = getDailyTotals();
+  const calPct    = totals.calories / targets.calories;
+  const pPct      = totals.protein  / targets.protein;
+  const cPct      = totals.carbs    / targets.carbs;
+  const fPct      = totals.fat      / targets.fat;
   const remaining = {
     calories: Math.max(0, targets.calories - totals.calories),
-    protein: Math.max(0, targets.protein - totals.protein),
+    protein:  Math.max(0, targets.protein  - totals.protein),
   };
 
   const refreshLog = () => setLog(getFoodLog());
 
+  // Debounced search — instant local, async remote after 350ms
+  const runSearch = useCallback(async (q) => {
+    if (!q.trim()) { setResults([]); setSearchPhase('idle'); return; }
+
+    setSearchPhase('searching');
+    const savedMeals  = getSavedMeals();
+    const recentFoods = getRecentFoods();
+
+    await searchAllFoods(q, {
+      savedMeals,
+      recentFoods,
+      remote: true,
+      onProgress: ({ phase, done, count }) => {
+        if (phase === 'local') {
+          // Instant local results — show immediately
+          searchAllFoods(q, { savedMeals, recentFoods, remote: false, onProgress: () => {} })
+            .then(localOnly => setResults(localOnly));
+        }
+        if (done) {
+          setSearchPhase('done');
+          setRemoteCount(count);
+        }
+      },
+    }).then(all => {
+      setResults(all);
+    });
+  }, []);
+
   useEffect(() => {
-    if (!query.trim()) { setResults([]); return; }
-    setResults(searchLocalFoods(query, 20));
-  }, [query]);
+    clearTimeout(debounceRef.current);
+    if (!query.trim()) { setResults([]); setSearchPhase('idle'); return; }
+    debounceRef.current = setTimeout(() => runSearch(query), 350);
+    return () => clearTimeout(debounceRef.current);
+  }, [query, runSearch]);
+
+  // FAB — show when search input is scrolled out of view
+  useEffect(() => {
+    const el = searchRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([e]) => setFabVisible(!e.isIntersecting), { threshold: 0 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  const scrollToSearch = () => {
+    searchRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => searchRef.current?.focus(), 300);
+  };
 
   const handleAdd = (food, qty = 1) => {
     addFoodEntry(food, activeMeal, qty);
     refreshLog();
     setQuery('');
     setResults([]);
+    setSearchPhase('idle');
     toast(`${food.emoji || '✅'} ${food.name} logged`, 'success');
   };
 
@@ -179,9 +240,10 @@ export default function FoodCalories() {
   };
 
   const handleAddSavedMeal = (meal) => {
-    meal.items.forEach(item => {
-      addFoodEntry({ ...item, id: `saved-${item.name}`, emoji: meal.emoji || '🍽️', servingSize: item.servingSize || '1 serving', source: 'saved' }, activeMeal, 1);
-    });
+    meal.items.forEach(item => addFoodEntry(
+      { ...item, id: `saved-${item.name}`, emoji: meal.emoji || '🍽️', servingSize: item.servingSize || '1 serving', source: 'saved' },
+      activeMeal, 1,
+    ));
     refreshLog();
     toast(`${meal.emoji} ${meal.name} added`, 'success');
   };
@@ -199,8 +261,8 @@ export default function FoodCalories() {
       }, activeMeal, f.quantity || 1));
       refreshLog();
       setNlQuery('');
-      toast(`✨ ${foods.length} item${foods.length > 1 ? 's' : ''} logged from text`, 'success');
-    } catch (e) {
+      toast(`✨ ${foods.length} item${foods.length > 1 ? 's' : ''} logged`, 'success');
+    } catch {
       toast('Could not parse that. Try again.', 'error');
     } finally {
       setNlLoading(false);
@@ -210,35 +272,27 @@ export default function FoodCalories() {
   const handleCopyYesterday = () => {
     copyYesterdayMeals();
     refreshLog();
-    toast('Yesterday\'s meals copied to today', 'success');
+    toast("Yesterday's meals copied", 'success');
   };
 
   const mealEntries = log[activeMeal] || [];
-  const mealCal = mealEntries.reduce((s, e) => s + e.calories, 0);
-  const savedMeals = getSavedMeals();
-  const recents = getRecentFoods().slice(0, 15);
+  const mealCal     = mealEntries.reduce((s, e) => s + e.calories, 0);
+  const savedMeals  = getSavedMeals();
+  const recents     = getRecentFoods().slice(0, 15);
   const showDropdown = query.trim().length > 0;
 
-  const [fabVisible, setFabVisible] = useState(false);
-
-  // Show FAB when search is not visible (user scrolled past it)
-  useEffect(() => {
-    const el = searchRef.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(([entry]) => setFabVisible(!entry.isIntersecting), { threshold: 0 });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-
-  const scrollToSearch = () => {
-    searchRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    setTimeout(() => searchRef.current?.focus(), 300);
+  // Status text shown below search in dropdown
+  const searchStatus = () => {
+    if (searchPhase === 'searching') return 'Searching USDA & Open Food Facts…';
+    if (searchPhase === 'done' && results.length === 0) return null;
+    if (searchPhase === 'done' && remoteCount > 0) return `${results.length} results across all sources`;
+    return null;
   };
 
   return (
     <div style={{ minHeight: '100vh', background: '#111010' }}>
 
-      {/* Sticky FAB — mobile only, appears after search scrolls out of view */}
+      {/* Sticky FAB — mobile only */}
       <AnimatePresence>
         {fabVisible && (
           <motion.button
@@ -248,9 +302,7 @@ export default function FoodCalories() {
             className="fixed z-40 md:hidden flex items-center justify-center rounded-full shadow-2xl"
             style={{
               bottom: 'calc(4.5rem + max(0px, env(safe-area-inset-bottom)))',
-              right: '1.25rem',
-              width: 52,
-              height: 52,
+              right: '1.25rem', width: 52, height: 52,
               background: 'linear-gradient(135deg, #f59e0b, #f97316)',
               boxShadow: '0 8px 32px rgba(245,158,11,0.45)',
             }}>
@@ -261,7 +313,7 @@ export default function FoodCalories() {
 
       {/* Header */}
       <div className="px-4 md:px-6 pt-8 pb-4">
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           <p className="text-xs font-medium mb-1" style={{ color: '#57534e' }}>
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </p>
@@ -284,8 +336,8 @@ export default function FoodCalories() {
           <div className="flex gap-3 md:gap-5 items-center">
             {[
               { label: 'Protein', value: totals.protein, target: targets.protein, unit: 'g', color: '#f59e0b', pct: pPct },
-              { label: 'Carbs', value: totals.carbs, target: targets.carbs, unit: 'g', color: '#10b981', pct: cPct },
-              { label: 'Fat', value: totals.fat, target: targets.fat, unit: 'g', color: '#3b82f6', pct: fPct },
+              { label: 'Carbs',   value: totals.carbs,   target: targets.carbs,   unit: 'g', color: '#10b981', pct: cPct },
+              { label: 'Fat',     value: totals.fat,     target: targets.fat,     unit: 'g', color: '#3b82f6', pct: fPct },
             ].map(m => (
               <div key={m.label} className="flex flex-col items-center gap-1">
                 <div className="relative">
@@ -301,52 +353,88 @@ export default function FoodCalories() {
           </div>
         </div>
         <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
-          <motion.div className="h-full rounded-full" style={{ background: calPct > 1 ? '#ef4444' : 'linear-gradient(90deg, #f59e0b, #f97316)' }}
+          <motion.div className="h-full rounded-full"
+            style={{ background: calPct > 1 ? '#ef4444' : 'linear-gradient(90deg, #f59e0b, #f97316)' }}
             animate={{ width: `${Math.min(calPct * 100, 100)}%` }} transition={{ duration: 0.7, ease: 'easeOut' }} />
         </div>
         <div className="flex items-center justify-between mt-2">
           <p className="text-xs" style={{ color: calPct > 1 ? '#ef4444' : '#57534e' }}>
-            {calPct > 1 ? `${totals.calories - targets.calories} kcal over target` : `${remaining.calories} kcal · ${remaining.protein}g protein remaining`}
+            {calPct > 1
+              ? `${totals.calories - targets.calories} kcal over target`
+              : `${remaining.calories} kcal · ${remaining.protein}g protein remaining`}
           </p>
-          <button onClick={handleCopyYesterday} className="flex items-center gap-1 text-xs transition-colors" style={{ color: '#57534e' }}>
+          <motion.button onClick={handleCopyYesterday} whileTap={{ scale: 0.93 }}
+            className="flex items-center gap-1 text-xs transition-colors min-touch" style={{ color: '#57534e' }}>
             <Copy size={10} />Copy yesterday
-          </button>
+          </motion.button>
         </div>
       </motion.div>
 
       {/* Search */}
       <div className="px-4 md:px-6 mb-4 relative z-30">
         <div className="relative">
-          <Search size={15} className="absolute left-4 top-1/2 -translate-y-1/2" style={{ color: '#57534e' }} />
-          <input ref={searchRef} value={query} onChange={e => setQuery(e.target.value)}
-            placeholder="What did you eat, Naman?"
-            className="w-full rounded-2xl pl-10 pr-4 py-3.5 text-sm outline-none"
-            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#f5f4f2' }} />
-          {query && <button onClick={() => setQuery('')} className="absolute right-4 top-1/2 -translate-y-1/2"><X size={13} style={{ color: '#57534e' }} /></button>}
+          {searchPhase === 'searching'
+            ? <Loader2 size={15} className="absolute left-4 top-1/2 -translate-y-1/2 animate-spin" style={{ color: '#f59e0b' }} />
+            : <Search size={15} className="absolute left-4 top-1/2 -translate-y-1/2" style={{ color: '#57534e' }} />}
+          <input
+            ref={searchRef}
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search any food — coffee, eggs, paneer…"
+            className="w-full rounded-2xl pl-10 pr-10 py-3.5 text-sm outline-none"
+            style={{ background: 'rgba(255,255,255,0.06)', border: `1px solid ${searchPhase === 'searching' ? 'rgba(245,158,11,0.3)' : 'rgba(255,255,255,0.1)'}`, color: '#f5f4f2', transition: 'border-color 0.2s' }}
+          />
+          {query && (
+            <button onClick={() => { setQuery(''); setResults([]); setSearchPhase('idle'); }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 min-touch">
+              <X size={13} style={{ color: '#57534e' }} />
+            </button>
+          )}
         </div>
 
         <AnimatePresence>
           {showDropdown && (
-            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+            <motion.div
+              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.15 }}
               className="absolute left-0 right-0 top-full mt-2 rounded-2xl overflow-hidden z-50"
-              style={{ background: '#1c1a18', border: '1px solid rgba(255,255,255,0.09)', boxShadow: '0 24px 64px rgba(0,0,0,0.6)', maxHeight: 380, overflowY: 'auto' }}>
-              <div className="px-4 py-2.5 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                <p className="text-xs" style={{ color: '#57534e' }}>Adding to</p>
+              style={{ background: '#1c1a18', border: '1px solid rgba(255,255,255,0.09)', boxShadow: '0 24px 64px rgba(0,0,0,0.6)', maxHeight: 420, overflowY: 'auto' }}>
+
+              {/* Meal selector + status */}
+              <div className="px-4 py-2.5 flex items-center justify-between sticky top-0 z-10"
+                style={{ background: '#1c1a18', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                <div className="flex items-center gap-2">
+                  {searchPhase === 'searching' && (
+                    <span className="text-xs animate-pulse" style={{ color: '#f59e0b' }}>Searching…</span>
+                  )}
+                  {searchStatus() && searchPhase === 'done' && (
+                    <span className="text-xs" style={{ color: '#3d3a36' }}>{searchStatus()}</span>
+                  )}
+                </div>
                 <select value={activeMeal} onChange={e => setActiveMeal(e.target.value)}
                   className="text-xs rounded-lg px-2 py-1 outline-none"
                   style={{ background: 'rgba(255,255,255,0.08)', color: '#f5f4f2', border: '1px solid rgba(255,255,255,0.1)' }}>
                   {MEALS.map(m => <option key={m} value={m}>{MEAL_META[m].label}</option>)}
                 </select>
               </div>
-              {results.length === 0 ? (
+
+              {results.length === 0 && searchPhase !== 'searching' ? (
                 <div className="py-8 text-center">
+                  <p className="text-2xl mb-2">🔍</p>
                   <p className="text-sm" style={{ color: '#57534e' }}>No results for "{query}"</p>
-                  <p className="text-xs mt-1" style={{ color: '#3d3a36' }}>Try a different keyword</p>
+                  <p className="text-xs mt-1" style={{ color: '#3d3a36' }}>Try a different keyword or use AI Log to describe it</p>
                 </div>
               ) : results.map(food => (
                 <SearchResult key={food.id} food={food} activeMeal={activeMeal} onAdd={handleAdd} />
               ))}
+
+              {/* Remote searching indicator at bottom */}
+              {searchPhase === 'searching' && results.length > 0 && (
+                <div className="flex items-center gap-2 px-4 py-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                  <Loader2 size={11} className="animate-spin flex-shrink-0" style={{ color: '#f59e0b' }} />
+                  <p className="text-xs" style={{ color: '#3d3a36' }}>Searching USDA & Open Food Facts…</p>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -356,20 +444,20 @@ export default function FoodCalories() {
       <div className="px-4 md:px-6 mb-5">
         <div className="grid grid-cols-4 gap-2">
           {MEALS.map(meal => {
-            const meta = MEAL_META[meal];
-            const cal = (log[meal] || []).reduce((s, e) => s + e.calories, 0);
-            const isActive = activeMeal === meal;
+            const meta  = MEAL_META[meal];
+            const cal   = (log[meal] || []).reduce((s, e) => s + e.calories, 0);
+            const isAct = activeMeal === meal;
             return (
-              <button key={meal} onClick={() => setActiveMeal(meal)}
+              <motion.button key={meal} onClick={() => setActiveMeal(meal)} whileTap={{ scale: 0.95 }}
                 className="rounded-xl py-3.5 px-2 text-center transition-all min-touch"
                 style={{
-                  background: isActive ? `${meta.color}15` : 'rgba(255,255,255,0.04)',
-                  border: `1px solid ${isActive ? `${meta.color}30` : 'rgba(255,255,255,0.06)'}`,
+                  background: isAct ? `${meta.color}15` : 'rgba(255,255,255,0.04)',
+                  border: `1px solid ${isAct ? `${meta.color}30` : 'rgba(255,255,255,0.06)'}`,
                 }}>
                 <div className="text-lg mb-1">{meta.emoji}</div>
-                <div className="text-xs font-medium" style={{ color: isActive ? meta.color : '#57534e' }}>{meta.label}</div>
-                {cal > 0 && <div className="text-[10px] mt-0.5" style={{ color: isActive ? `${meta.color}80` : '#3d3a36' }}>{cal} cal</div>}
-              </button>
+                <div className="text-xs font-medium" style={{ color: isAct ? meta.color : '#57534e' }}>{meta.label}</div>
+                {cal > 0 && <div className="text-[10px] mt-0.5" style={{ color: isAct ? `${meta.color}80` : '#3d3a36' }}>{cal} cal</div>}
+              </motion.button>
             );
           })}
         </div>
@@ -377,8 +465,7 @@ export default function FoodCalories() {
 
       {/* Main content */}
       <div className="px-4 md:px-6 pb-24 md:pb-10">
-
-        {/* Tabs — scrollable on mobile */}
+        {/* Tabs */}
         <div className="flex gap-1 p-1 rounded-xl mb-5 overflow-x-auto" style={{ background: 'rgba(255,255,255,0.04)', scrollbarWidth: 'none' }}>
           {TABS.map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
@@ -407,7 +494,7 @@ export default function FoodCalories() {
               <div className="py-12 text-center">
                 <p className="text-3xl mb-2">{MEAL_META[activeMeal].emoji}</p>
                 <p className="text-sm" style={{ color: '#57534e' }}>Nothing logged for {MEAL_META[activeMeal].label.toLowerCase()}</p>
-                <p className="text-xs mt-1" style={{ color: '#3d3a36' }}>Search above to add foods</p>
+                <p className="text-xs mt-1" style={{ color: '#3d3a36' }}>Search above or try "coffee", "eggs", "chicken"</p>
               </div>
             ) : (
               <AnimatePresence>
@@ -467,7 +554,7 @@ export default function FoodCalories() {
                 <h3 className="text-sm font-semibold" style={{ color: '#f5f4f2' }}>AI Natural Language Log</h3>
               </div>
               <p className="text-xs mb-4" style={{ color: '#78716c' }}>
-                Just describe what you ate. "2 eggs and toast" · "Chipotle chicken bowl" · "Protein shake with banana"
+                Describe what you ate in plain text. Macros are estimated automatically.
               </p>
               <div className="flex gap-2">
                 <input value={nlQuery} onChange={e => setNlQuery(e.target.value)}
@@ -475,20 +562,20 @@ export default function FoodCalories() {
                   placeholder="I just had..."
                   className="flex-1 rounded-xl px-4 py-3 text-sm outline-none"
                   style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', color: '#f5f4f2' }} />
-                <button onClick={handleNLLog} disabled={nlLoading || !nlQuery.trim()}
-                  className="px-4 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all"
+                <motion.button onClick={handleNLLog} disabled={nlLoading || !nlQuery.trim()} whileTap={{ scale: 0.95 }}
+                  className="px-4 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all min-touch"
                   style={{ background: nlQuery.trim() ? 'linear-gradient(135deg, #f59e0b, #f97316)' : 'rgba(255,255,255,0.06)', color: nlQuery.trim() ? '#000' : '#57534e' }}>
-                  {nlLoading ? '...' : <><Zap size={14} />Log</>}
-                </button>
+                  {nlLoading ? <Loader2 size={14} className="animate-spin" /> : <><Zap size={14} />Log</>}
+                </motion.button>
               </div>
             </div>
             <div className="space-y-2">
-              {['2 scrambled eggs with toast', 'Chicken rice bowl', 'Greek yogurt and berries', 'Protein shake post workout'].map(ex => (
-                <button key={ex} onClick={() => setNlQuery(ex)}
-                  className="w-full text-left px-4 py-3 rounded-xl text-sm transition-all"
+              {['2 scrambled eggs with toast', 'Black coffee', 'Chicken rice bowl', 'Protein shake post workout', 'Greek yogurt and berries'].map(ex => (
+                <motion.button key={ex} onClick={() => setNlQuery(ex)} whileTap={{ scale: 0.98 }}
+                  className="w-full text-left px-4 py-3 rounded-xl text-sm transition-all min-touch"
                   style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', color: '#78716c' }}>
                   "{ex}"
-                </button>
+                </motion.button>
               ))}
             </div>
           </div>
