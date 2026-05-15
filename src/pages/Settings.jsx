@@ -50,11 +50,14 @@ function Card({ children, delay = 0 }) {
   );
 }
 
+// Frontend-keyed sources read import.meta.env directly (consistent with FoodDatabaseCard).
+// OpenAI is server-only — status comes from /api/status.
 const API_LABELS = {
-  usda:        { label: 'USDA FoodData Central', desc: 'Free at fdc.nal.usda.gov', serverOnly: false },
-  spoonacular: { label: 'Spoonacular',           desc: 'Recipe database, free tier', serverOnly: false },
-  openai:      { label: 'OpenAI',                desc: 'Powers AI logging & recipe builder', serverOnly: true },
-  nutritionix: { label: 'Nutritionix',           desc: 'Restaurant + branded foods', serverOnly: false },
+  usda:          { label: 'USDA FoodData Central', desc: 'VITE_USDA_API_KEY · fdc.nal.usda.gov',       serverOnly: false },
+  openfoodfacts: { label: 'Open Food Facts',        desc: 'Always available — no key required',          serverOnly: false },
+  spoonacular:   { label: 'Spoonacular',            desc: 'VITE_SPOONACULAR_API_KEY · recipe search',   serverOnly: false },
+  nutritionix:   { label: 'Nutritionix',            desc: 'VITE_NUTRITIONIX_API_KEY · restaurant foods', serverOnly: false },
+  openai:        { label: 'OpenAI',                 desc: 'OPENAI_API_KEY (server-only) · AI features',  serverOnly: true  },
 };
 
 function ApiStatusRow({ key: _k, name, status, meta }) {
@@ -172,7 +175,7 @@ export default function Settings() {
   const [store, update] = useApexStore();
   const [saved, setSaved] = useState(false);
   const [apiStatus, setApiStatus] = useState({
-    usda: 'loading', spoonacular: 'loading', openai: 'loading', nutritionix: 'loading',
+    usda: 'loading', openfoodfacts: 'connected', spoonacular: 'loading', nutritionix: 'loading', openai: 'loading',
   });
   const [apiError, setApiError] = useState(false);
   const toast = useToast();
@@ -180,24 +183,28 @@ export default function Settings() {
   const settings = store.settings;
   const set = (key) => (val) => update(s => ({ ...s, settings: { ...s.settings, [key]: val } }));
 
-  // Fetch API status from backend — OpenAI key is checked server-side only
+  // Frontend keys are read directly from import.meta.env — same source as FoodDatabaseCard.
+  // OpenAI is server-only; its status is fetched from /api/status.
   const fetchApiStatus = async () => {
-    setApiStatus({ usda: 'loading', spoonacular: 'loading', openai: 'loading', nutritionix: 'loading' });
+    const frontendStatus = {
+      usda:          import.meta.env.VITE_USDA_API_KEY        ? 'connected' : 'missing',
+      openfoodfacts: 'connected', // always available, no key
+      spoonacular:   import.meta.env.VITE_SPOONACULAR_API_KEY ? 'connected' : 'missing',
+      nutritionix:   import.meta.env.VITE_NUTRITIONIX_API_KEY ? 'connected' : 'missing',
+      openai:        'loading',
+    };
+    setApiStatus(frontendStatus);
     setApiError(false);
+
+    // Only the OpenAI key lives server-side
     try {
       const res = await fetch('/api/status');
-      if (!res.ok) throw new Error('Server unreachable');
+      if (!res.ok) throw new Error('unreachable');
       const data = await res.json();
-      setApiStatus(data);
+      setApiStatus(prev => ({ ...prev, openai: data.openai ?? 'unknown' }));
     } catch {
-      // Server not running — fall back to client-side VITE_ checks only, mark openai as unknown
       setApiError(true);
-      setApiStatus({
-        usda:        import.meta.env.VITE_USDA_API_KEY        ? 'connected' : 'missing',
-        spoonacular: import.meta.env.VITE_SPOONACULAR_API_KEY ? 'connected' : 'missing',
-        openai:      'unknown',
-        nutritionix: import.meta.env.VITE_NUTRITIONIX_API_KEY ? 'connected' : 'missing',
-      });
+      setApiStatus(prev => ({ ...prev, openai: 'unknown' }));
     }
   };
 
@@ -293,9 +300,7 @@ export default function Settings() {
         <Card delay={0.1}>
           <SectionHeader icon={Target} title="Weight Goals" color="#10b981" />
           <p className="text-xs mb-3" style={{ color: '#57534e' }}>
-            {isMetric
-              ? 'Enter values in kg — stored internally in lbs.'
-              : 'Enter values in lbs.'}
+            {isMetric ? 'Values displayed in kg.' : 'Values in lbs.'}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field

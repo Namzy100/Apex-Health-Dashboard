@@ -595,12 +595,14 @@ export default function Dashboard() {
         <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg, rgba(245,158,11,0.14) 0%, transparent 55%)' }} />
         <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse 100% 80% at 50% 50%, transparent 40%, rgba(0,0,0,0.55) 100%)' }} />
 
-        {/* Focus Mode toggle */}
+        {/* Focus Mode toggle — z-index must beat the absolute inset-0 content div below */}
         <motion.button
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
           onClick={() => setFocusOpen(true)}
+          whileTap={{ scale: 0.93 }}
+          aria-label="Open Focus Mode"
           className="absolute top-3 right-3 md:top-4 md:right-4 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold min-touch"
-          style={{ background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(12px)', color: '#57534e' }}>
+          style={{ background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(12px)', color: '#57534e', zIndex: 10 }}>
           <Maximize2 size={11} />Focus
         </motion.button>
 
