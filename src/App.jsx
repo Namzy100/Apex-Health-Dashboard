@@ -76,6 +76,10 @@ const SummerPlans   = lazy(() => import('./pages/SummerPlans'));
 const Insights      = lazy(() => import('./pages/Insights'));
 const Settings      = lazy(() => import('./pages/Settings'));
 const Import        = lazy(() => import('./pages/Import'));
+const Today         = lazy(() => import('./pages/Today'));
+const Habits        = lazy(() => import('./pages/Habits'));
+const Goals         = lazy(() => import('./pages/Goals'));
+const Journal       = lazy(() => import('./pages/Journal'));
 
 function PageSkeleton() {
   return (
@@ -117,6 +121,10 @@ export default function App() {
                   <Route path="/insights" element={<Insights />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/import"   element={<Import />} />
+                  <Route path="/today"   element={<Today />} />
+                  <Route path="/habits"  element={<Habits />} />
+                  <Route path="/goals"   element={<Goals />} />
+                  <Route path="/journal" element={<Journal />} />
                 </Routes>
               </Suspense>
             </main>

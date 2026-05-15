@@ -152,48 +152,63 @@ Return ONLY this exact JSON (no markdown, no extra text):
 
 // ── POST /api/ai/import-recipe — parse social caption → structured recipe ─────
 app.post('/api/ai/import-recipe', async (req, res) => {
-  const { text, url, notes, userMacroGoals, dietaryPreferences } = req.body || {};
+  const { text, url, platform, notes, userMacroGoals } = req.body || {};
   if (!text) return res.status(400).json({ error: 'text required' });
 
-  const prompt = `You are a recipe parser. Extract a structured recipe from the following text (which may be a social media caption, comment, or raw recipe post).
+  const prompt = `You are a recipe parser. Your job is to extract a recipe ONLY if the text clearly contains actual recipe content (ingredients + preparation steps).
+
+SOURCE: ${platform || 'unknown'} ${url ? `(${url})` : ''}
 
 TEXT:
 """
-${text.slice(0, 3000)}
+${text.slice(0, 4000)}
 """
 
 ${notes ? `User notes: ${notes}` : ''}
-${dietaryPreferences ? `User dietary preferences: ${dietaryPreferences}` : ''}
+${userMacroGoals ? `User macro goals: ${JSON.stringify(userMacroGoals)}` : ''}
 
-Return ONLY this exact JSON (no markdown, no extra text):
+CRITICAL RULES:
+1. If the text contains real recipe ingredients AND preparation steps → extract and return foundRecipe: true
+2. If the text is just a video link, a title only, a caption without ingredients, or too vague → return foundRecipe: false with a clear failureReason
+3. NEVER hallucinate a recipe. If ingredients and steps are not present, do not invent them.
+4. If macros are stated in the text, use them. If not stated but ingredients are clear, estimate using USDA values.
+
+If foundRecipe is TRUE, return ONLY this JSON:
 {
+  "foundRecipe": true,
   "name": "Recipe name",
   "emoji": "🍽️",
   "calories": 0,
   "protein": 0,
   "carbs": 0,
   "fat": 0,
-  "servings": 2,
-  "prepTime": 15,
-  "cookTime": 20,
+  "servings": 1,
+  "prepTime": 0,
+  "cookTime": 0,
   "ingredients": ["ingredient with quantity"],
   "steps": ["step 1", "step 2"],
   "cuisine": "Indian/Italian/American/etc or Unknown",
   "mealType": "Breakfast/Lunch/Dinner/Snack/Any",
-  "tags": ["high-protein", "quick", "meal-prep", etc],
+  "tags": ["high-protein", "quick", "meal-prep"],
   "notes": "any useful tip from the original",
-  "confidence": 80,
-  "image": null
+  "confidence": 80
 }
 
-Rules:
-- If macros aren't in the text, estimate from ingredients (realistic USDA values)
-- confidence: 90+ if macros stated, 70-89 if you estimated from clear ingredients, 40-69 if text is vague
-- tags: include relevant ones like high-protein, vegetarian, vegan, keto, quick, meal-prep, comfort-food, etc
-- If the text is not a recipe at all, still return best guess with low confidence (30)`;
+If foundRecipe is FALSE, return ONLY this JSON:
+{
+  "foundRecipe": false,
+  "failureReason": "Brief explanation of why no recipe was found",
+  "confidence": 0
+}
+
+Confidence scoring (only when foundRecipe is true):
+- 90+: macros explicitly stated in text
+- 70-89: clear ingredients list, macros estimated
+- 40-69: partial ingredients, vague amounts
+- <40: very uncertain`;
 
   try {
-    const content = await callOpenAI([{ role: 'user', content: prompt }], 'gpt-4o-mini', 1200);
+    const content = await callOpenAI([{ role: 'user', content: prompt }], 'gpt-4o-mini', 1400);
     const cleaned = content.trim().replace(/^```json?\n?/, '').replace(/```$/, '').trim();
     const recipe = JSON.parse(cleaned);
     res.json({ recipe });

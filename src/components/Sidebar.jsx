@@ -5,29 +5,61 @@ import {
   BookOpen, Camera, Sun, Lightbulb, Settings, Flame,
   UtensilsCrossed, CalendarDays, ChefHat, Download,
   Cloud, CloudOff, Loader2,
+  Zap, CheckSquare, Target, NotebookPen,
 } from 'lucide-react';
 import { useApexStore, getDailyTotals } from '../store/apexStore';
 import { useSyncContext, SYNC_STATUS } from '../contexts/SyncContext';
 
-const TOP_LINKS = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/food', icon: UtensilsCrossed, label: 'Food & Calories', badge: 'LOG' },
-  { to: '/cook', icon: ChefHat, label: 'Cook Something', badge: 'AI' },
-  { to: '/import', icon: Download, label: 'Import Recipe', badge: 'NEW' },
+// Nav sections with optional group labels
+const NAV_SECTIONS = [
+  {
+    label: null,
+    links: [
+      { to: '/today',  icon: Zap,            label: 'Today',          badge: 'NEW' },
+      { to: '/',       icon: LayoutDashboard, label: 'Dashboard' },
+    ],
+  },
+  {
+    label: 'LIFE OS',
+    links: [
+      { to: '/habits',  icon: CheckSquare,  label: 'Habits' },
+      { to: '/goals',   icon: Target,       label: 'Goals' },
+      { to: '/journal', icon: NotebookPen,  label: 'Journal' },
+    ],
+  },
+  {
+    label: 'NUTRITION',
+    links: [
+      { to: '/food',   icon: UtensilsCrossed, label: 'Food & Calories' },
+      { to: '/cook',   icon: ChefHat,         label: 'Cook Something', badge: 'AI' },
+      { to: '/import', icon: Download,         label: 'Import Recipe' },
+    ],
+  },
+  {
+    label: 'FITNESS',
+    links: [
+      { to: '/weight',   icon: Scale,      label: 'Weight' },
+      { to: '/activity', icon: Footprints, label: 'Activity' },
+      { to: '/lifting',  icon: Dumbbell,   label: 'Lifting' },
+    ],
+  },
+  {
+    label: 'MORE',
+    links: [
+      { to: '/macros',   icon: Utensils,    label: 'Macros' },
+      { to: '/recipes',  icon: BookOpen,    label: 'Recipes' },
+      { to: '/calendar', icon: CalendarDays,label: 'Calendar' },
+      { to: '/progress', icon: Camera,      label: 'Progress' },
+      { to: '/summer',   icon: Sun,         label: 'Summer Plans' },
+      { to: '/insights', icon: Lightbulb,   label: 'Insights' },
+      { to: '/settings', icon: Settings,    label: 'Settings' },
+    ],
+  },
 ];
 
-const MAIN_LINKS = [
-  { to: '/weight', icon: Scale, label: 'Weight' },
-  { to: '/macros', icon: Utensils, label: 'Macros' },
-  { to: '/activity', icon: Footprints, label: 'Activity' },
-  { to: '/lifting', icon: Dumbbell, label: 'Lifting' },
-  { to: '/recipes', icon: BookOpen, label: 'Recipes' },
-  { to: '/calendar', icon: CalendarDays, label: 'Calendar' },
-  { to: '/progress', icon: Camera, label: 'Progress Pics' },
-  { to: '/summer', icon: Sun, label: 'Summer Plans' },
-  { to: '/insights', icon: Lightbulb, label: 'Insights' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
-];
+// Flat lists kept for legacy (fallback, not used in new layout)
+const TOP_LINKS = NAV_SECTIONS[0].links;
+const MAIN_LINKS = [];
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const CHECKED_DAYS = [true, true, true, true, false, false, false];
@@ -137,18 +169,20 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-3 overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
-        {/* Top links */}
-        <div className="space-y-0.5 mb-2">
-          {TOP_LINKS.map((link, i) => <NavItem key={link.to} {...link} index={i} />)}
-        </div>
-
-        {/* Divider */}
-        <div className="my-2 mx-2" style={{ height: 1, background: 'rgba(255,255,255,0.05)' }} />
-
-        {/* Main links */}
-        <div className="space-y-0.5">
-          {MAIN_LINKS.map((link, i) => <NavItem key={link.to} {...link} index={i + TOP_LINKS.length + 1} />)}
-        </div>
+        {NAV_SECTIONS.map((section, si) => (
+          <div key={si} className={si > 0 ? 'mt-3' : ''}>
+            {section.label && (
+              <p className="px-2 mb-1 text-[9px] font-semibold tracking-widest"
+                style={{ color: '#2d2a27' }}>{section.label}</p>
+            )}
+            <div className="space-y-0.5">
+              {section.links.map((link, i) => (
+                <NavItem key={link.to} {...link}
+                  index={si * 10 + i} />
+              ))}
+            </div>
+          </div>
+        ))}
       </nav>
 
       {/* Today's progress bar */}

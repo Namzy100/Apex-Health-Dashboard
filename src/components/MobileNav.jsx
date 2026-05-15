@@ -1,12 +1,12 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, UtensilsCrossed, ChefHat, Download, Settings } from 'lucide-react';
+import { Zap, UtensilsCrossed, CheckSquare, Target, Settings } from 'lucide-react';
 
 const TABS = [
-  { to: '/',        icon: LayoutDashboard, label: 'Home' },
+  { to: '/today',   icon: Zap,            label: 'Today' },
   { to: '/food',    icon: UtensilsCrossed, label: 'Food' },
-  { to: '/cook',    icon: ChefHat,         label: 'Cook' },
-  { to: '/import',  icon: Download,        label: 'Import' },
-  { to: '/settings',icon: Settings,        label: 'Settings' },
+  { to: '/habits',  icon: CheckSquare,    label: 'Habits' },
+  { to: '/goals',   icon: Target,         label: 'Goals' },
+  { to: '/settings',icon: Settings,       label: 'Settings' },
 ];
 
 export default function MobileNav() {

@@ -48,6 +48,12 @@ function defaultStore() {
     calendarEvents: defaultCalendarEvents(),
     dailyCheckins: {},
     importedRecipes: [],
+    // ── Life OS modules ───────────────────────────────────────────────────────
+    habits:        defaultHabits(),
+    habitLogs:     {},    // { 'YYYY-MM-DD': { habitId: true|number } }
+    goals:         defaultLifeGoals(),
+    journalEntries:{},    // { 'YYYY-MM-DD': { text, mood, tags, createdAt } }
+    meetings:      [],    // { id, title, date, time, location, notes, link }
   };
 }
 
@@ -129,6 +135,28 @@ function defaultSavedMeals() {
       ],
       tags: ['breakfast', 'no-cook'], frequency: 6, isFavorite: true,
     },
+  ];
+}
+
+function defaultHabits() {
+  return [
+    { id: 'h-gym',      name: 'Gym',          emoji: '🏋️', category: 'fitness',  color: '#f59e0b', targetType: 'bool', active: true },
+    { id: 'h-steps',    name: '10k Steps',     emoji: '👟', category: 'fitness',  color: '#10b981', targetType: 'bool', active: true },
+    { id: 'h-water',    name: 'Drink 3L',      emoji: '💧', category: 'health',   color: '#3b82f6', targetType: 'bool', active: true },
+    { id: 'h-protein',  name: 'Hit Protein',   emoji: '🥩', category: 'nutrition',color: '#ef4444', targetType: 'bool', active: true },
+    { id: 'h-sleep',    name: 'Sleep by 11pm', emoji: '😴', category: 'recovery', color: '#8b5cf6', targetType: 'bool', active: true },
+    { id: 'h-read',     name: 'Read 20 min',   emoji: '📚', category: 'growth',   color: '#a78bfa', targetType: 'bool', active: true },
+    { id: 'h-meditate', name: 'Meditate',      emoji: '🧘', category: 'wellness', color: '#06b6d4', targetType: 'bool', active: false },
+    { id: 'h-nojunk',   name: 'No Junk Food',  emoji: '🚫', category: 'nutrition',color: '#f97316', targetType: 'bool', active: false },
+  ];
+}
+
+function defaultLifeGoals() {
+  return [
+    { id: 'goal-1', category: 'fitness',  title: 'Cut to 165 lbs by Aug 31',   description: 'The summer cut arc.',            targetDate: '2026-08-31', progress: 30, milestones: [], done: false },
+    { id: 'goal-2', category: 'fitness',  title: 'Visible abs by July',         description: 'Consistency every single day.',  targetDate: '2026-07-01', progress: 20, milestones: [], done: false },
+    { id: 'goal-3', category: 'growth',   title: 'Read 3 books this summer',    description: '1 book per month.',              targetDate: '2026-08-31', progress: 0,  milestones: [], done: false },
+    { id: 'goal-4', category: 'travel',   title: 'Beach trip in July',          description: 'Look and feel your best.',       targetDate: '2026-07-15', progress: 10, milestones: [], done: false },
   ];
 }
 
@@ -396,6 +424,82 @@ export function updateImportedRecipe(id, changes) {
   const store = getOrInitStore();
   const updated = (store.importedRecipes || []).map(r => r.id === id ? { ...r, ...changes } : r);
   writeStore({ ...store, importedRecipes: updated });
+}
+
+// ── Export / Import ───────────────────────────────────────────────────────────
+
+// ── Habits ────────────────────────────────────────────────────────────────────
+
+export function getHabits() {
+  return getOrInitStore().habits || [];
+}
+
+export function saveHabit(habit) {
+  const store = getOrInitStore();
+  const habits = store.habits || [];
+  const idx = habits.findIndex(h => h.id === habit.id);
+  const updated = idx >= 0 ? habits.map((h, i) => i === idx ? habit : h) : [...habits, habit];
+  writeStore({ ...store, habits: updated });
+}
+
+export function deleteHabit(id) {
+  const store = getOrInitStore();
+  writeStore({ ...store, habits: (store.habits || []).filter(h => h.id !== id) });
+}
+
+export function getHabitLog(date = todayStr()) {
+  return getOrInitStore().habitLogs?.[date] || {};
+}
+
+export function setHabitLog(date = todayStr(), habitId, value) {
+  const store = getOrInitStore();
+  const logs = { ...(store.habitLogs || {}) };
+  logs[date] = { ...(logs[date] || {}), [habitId]: value };
+  writeStore({ ...store, habitLogs: logs });
+}
+
+// ── Goals ─────────────────────────────────────────────────────────────────────
+
+export function getGoals() {
+  return getOrInitStore().goals || [];
+}
+
+export function saveGoal(goal) {
+  const store = getOrInitStore();
+  const goals = store.goals || [];
+  const idx = goals.findIndex(g => g.id === goal.id);
+  const updated = idx >= 0 ? goals.map((g, i) => i === idx ? goal : g) : [...goals, goal];
+  writeStore({ ...store, goals: updated });
+}
+
+export function deleteGoal(id) {
+  const store = getOrInitStore();
+  writeStore({ ...store, goals: (store.goals || []).filter(g => g.id !== id) });
+}
+
+// ── Journal ───────────────────────────────────────────────────────────────────
+
+export function getJournalEntry(date = todayStr()) {
+  return getOrInitStore().journalEntries?.[date] || null;
+}
+
+export function getAllJournalEntries() {
+  const store = getOrInitStore();
+  return Object.entries(store.journalEntries || {})
+    .map(([date, entry]) => ({ date, ...entry }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export function saveJournalEntry(date = todayStr(), entry) {
+  const store = getOrInitStore();
+  writeStore({ ...store, journalEntries: { ...(store.journalEntries || {}), [date]: { ...entry, updatedAt: new Date().toISOString() } } });
+}
+
+export function deleteJournalEntry(date) {
+  const store = getOrInitStore();
+  const entries = { ...(store.journalEntries || {}) };
+  delete entries[date];
+  writeStore({ ...store, journalEntries: entries });
 }
 
 // ── Export / Import ───────────────────────────────────────────────────────────
