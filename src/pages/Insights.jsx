@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { Lightbulb, ArrowUp, ArrowDown, Minus } from 'lucide-react';
 import { useApexStore } from '../store/apexStore';
 import { getInsightsList, detectWeightTrend } from '../services/patternDetection';
+import { useUnits } from '../hooks/useUnits';
 import GlassCard from '../components/GlassCard';
 
 const TYPE_COLOR = {
@@ -18,6 +19,7 @@ function TrendArrow({ type }) {
 
 export default function Insights() {
   const [store] = useApexStore();
+  const { fw, wUnit, isMetric } = useUnits();
   const settings  = store.settings || {};
   const weightLogs = store.weightLogs || [];
   const workouts  = store.workouts || [];
@@ -28,7 +30,8 @@ export default function Insights() {
 
   const startWeight = settings.startWeight || weightLogs[0]?.weight || 0;
   const currentWeight = weightLogs[weightLogs.length - 1]?.weight || startWeight;
-  const totalLost = Math.max(0, parseFloat((startWeight - currentWeight).toFixed(1)));
+  const totalLostLbs = Math.max(0, parseFloat((startWeight - currentWeight).toFixed(1)));
+  const totalLostDisplay = fw(totalLostLbs).value;
 
   const foodDays = Object.values(foodLogs).filter(day => {
     const entries = [...(day.breakfast || []), ...(day.lunch || []), ...(day.dinner || []), ...(day.snacks || [])];
@@ -73,11 +76,19 @@ export default function Insights() {
         <GlassCard className="p-5 mb-6" glow="amber" delay={0}>
           <div className="flex flex-wrap gap-6 items-center">
             {[
-              { label: 'Days tracked',  value: weightLogs.length, color: '#f59e0b' },
-              { label: 'Lbs lost',      value: totalLost || '—',  color: '#10b981' },
-              { label: 'Workouts',      value: workouts.length,   color: '#6366f1' },
-              { label: 'Food days',     value: foodDays,          color: '#f97316' },
-              ...(trend ? [{ label: 'Rate', value: trend.weeklyRateStr, color: trend.trend === 'declining' ? '#10b981' : trend.trend === 'rising' ? '#f97316' : '#78716c' }] : []),
+              { label: 'Days tracked',        value: weightLogs.length,   color: '#f59e0b' },
+              { label: `${wUnit} lost`,        value: totalLostDisplay || '—', color: '#10b981' },
+              { label: 'Workouts',             value: workouts.length,    color: '#6366f1' },
+              { label: 'Food days',            value: foodDays,           color: '#f97316' },
+              ...(trend ? [{
+                label: 'Rate/wk',
+                value: Math.abs(trend.weeklyRateLbs) < 0.1
+                  ? 'stable'
+                  : isMetric
+                    ? `${trend.weeklyRateLbs > 0 ? '+' : ''}${(trend.weeklyRateLbs * 0.453592).toFixed(2)} kg`
+                    : `${trend.weeklyRateLbs > 0 ? '+' : ''}${trend.weeklyRateLbs.toFixed(1)} lbs`,
+                color: trend.trend === 'declining' ? '#10b981' : trend.trend === 'rising' ? '#f97316' : '#78716c',
+              }] : []),
             ].map(s => (
               <div key={s.label} className="text-center">
                 <p className="text-2xl font-black" style={{ color: s.color }}>{s.value}</p>

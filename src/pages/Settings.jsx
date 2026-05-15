@@ -10,6 +10,9 @@ import { useToast } from '../components/Toast';
 import { searchAllFoods, getSourceAvailability } from '../services/foodSearch';
 import { packagedFoods } from '../data/samplePackagedFoods';
 import { restaurantFoods } from '../data/sampleRestaurantFoods';
+import { lbsToKg, kgToLbs, inchesToCm, cmToInches } from '../utils/unitConversions';
+
+const IS_DEV = import.meta.env.DEV;
 
 function SectionHeader({ icon: Icon, title, color = '#f59e0b' }) {
   return (
@@ -249,7 +252,15 @@ export default function Settings() {
             </div>
             <Field label="Start Date" value={settings.startDate} onChange={set('startDate')} type="date" />
             <Field label="Goal Date"  value={settings.goalDate}  onChange={set('goalDate')}  type="date" />
-            <Field label="Height (inches)" value={settings.height} onChange={set('height')} type="number" unit="in" />
+            <Field
+              label="Height"
+              value={isMetric
+                ? (settings.height ? inchesToCm(settings.height) : '')
+                : (settings.height ?? '')}
+              onChange={v => set('height')(isMetric ? cmToInches(v) : v)}
+              type="number"
+              unit={isMetric ? 'cm' : 'in'}
+            />
           </div>
         </Card>
 
@@ -282,19 +293,38 @@ export default function Settings() {
         <Card delay={0.1}>
           <SectionHeader icon={Target} title="Weight Goals" color="#10b981" />
           <p className="text-xs mb-3" style={{ color: '#57534e' }}>
-            Always stored in <strong style={{ color: '#a8a29e' }}>lbs</strong>.
-            {isMetric && ' Displayed in kg on all other pages.'}
+            {isMetric
+              ? 'Enter values in kg — stored internally in lbs.'
+              : 'Enter values in lbs.'}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Start Weight (lbs)" value={settings.startWeight} onChange={set('startWeight')} type="number" unit="lbs" />
-            <Field label="Goal Weight (lbs)"  value={settings.goalWeight}  onChange={set('goalWeight')}  type="number" unit="lbs" />
+            <Field
+              label="Start Weight"
+              value={isMetric
+                ? (settings.startWeight ? lbsToKg(settings.startWeight) : '')
+                : (settings.startWeight ?? '')}
+              onChange={v => set('startWeight')(isMetric ? kgToLbs(v) : v)}
+              type="number"
+              unit={isMetric ? 'kg' : 'lbs'}
+            />
+            <Field
+              label="Goal Weight"
+              value={isMetric
+                ? (settings.goalWeight ? lbsToKg(settings.goalWeight) : '')
+                : (settings.goalWeight ?? '')}
+              onChange={v => set('goalWeight')(isMetric ? kgToLbs(v) : v)}
+              type="number"
+              unit={isMetric ? 'kg' : 'lbs'}
+            />
           </div>
           {settings.startWeight && settings.goalWeight && (
             <div className="mt-3 p-3 rounded-xl" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.15)' }}>
               <p className="text-xs" style={{ color: '#10b981' }}>
-                Goal: lose <strong>{(settings.startWeight - settings.goalWeight).toFixed(1)} lbs</strong>
-                {isMetric && ` (${((settings.startWeight - settings.goalWeight) * 0.453592).toFixed(1)} kg)`}
-                {' '}by {settings.goalDate || '—'}
+                {isMetric ? (
+                  <>Goal: lose <strong>{((settings.startWeight - settings.goalWeight) * 0.453592).toFixed(1)} kg</strong> by {settings.goalDate || '—'}</>
+                ) : (
+                  <>Goal: lose <strong>{(settings.startWeight - settings.goalWeight).toFixed(1)} lbs</strong> by {settings.goalDate || '—'}</>
+                )}
               </p>
             </div>
           )}
@@ -336,8 +366,10 @@ export default function Settings() {
           </div>
           {apiError && (
             <div className="mb-3 px-3 py-2 rounded-xl text-xs" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.15)', color: '#a8896e' }}>
-              API server not running. Start it with <code className="px-1 rounded" style={{ background: 'rgba(255,255,255,0.06)' }}>npm run server</code>.
-              OpenAI status unknown until server is up.
+              {IS_DEV
+                ? <>Backend not running. Start with <code className="px-1 rounded" style={{ background: 'rgba(255,255,255,0.06)' }}>npm run server</code>. OpenAI status requires the server.</>
+                : <>API server unreachable. OpenAI status unavailable — the AI features may still work if the server is configured.</>
+              }
             </div>
           )}
           <p className="text-xs mb-3" style={{ color: '#57534e' }}>

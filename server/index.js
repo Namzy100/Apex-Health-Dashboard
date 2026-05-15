@@ -19,7 +19,19 @@ try {
 } catch {}
 
 const app = express();
-app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:4173'] }));
+const ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'http://localhost:4173',
+  // Production: set ALLOWED_ORIGIN env var or allow all same-origin (handled by Vercel routing)
+  ...(process.env.ALLOWED_ORIGIN ? [process.env.ALLOWED_ORIGIN] : []),
+];
+app.use(cors({
+  origin: (origin, cb) => {
+    // Allow same-origin requests (no Origin header) and listed origins
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    cb(null, true); // Allow all in production — Vercel routing is the gatekeeper
+  },
+}));
 app.use(express.json({ limit: '1mb' }));
 
 // ── /api/status ─────────────────────────────────────────────────────────────

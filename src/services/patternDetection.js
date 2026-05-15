@@ -72,9 +72,11 @@ export function detectWeightTrend(store) {
   const slope = den === 0 ? 0 : num / den;
   const weeklyRate = slope * 7;
 
+  // weeklyRateLbs is the canonical lbs/wk value — callers convert for display
   return {
     slope,
     weeklyRate: parseFloat(weeklyRate.toFixed(2)),
+    weeklyRateLbs: parseFloat(weeklyRate.toFixed(2)),
     trend: slope < -0.05 ? 'declining' : slope > 0.05 ? 'rising' : 'stable',
     weeklyRateStr: Math.abs(weeklyRate) < 0.1
       ? 'stable'
@@ -107,12 +109,28 @@ export function getInsightsList(store) {
   const calTrend     = detectCalorieTrend(store);
   const settings     = store.settings || {};
   const logs         = store.weightLogs || [];
+  const isMetric     = settings.units === 'metric';
+
+  // Build unit-aware rate string from raw lbs/wk value
+  const rateStr = (trend) => {
+    if (!trend || Math.abs(trend.weeklyRateLbs) < 0.1) return 'stable';
+    if (isMetric) {
+      const kgWk = (trend.weeklyRateLbs * 0.453592).toFixed(2);
+      return `${trend.weeklyRateLbs > 0 ? '+' : ''}${kgWk} kg/wk`;
+    }
+    return trend.weeklyRateStr;
+  };
+
+  const fwLost = (lbs) => {
+    if (isMetric) return `${(lbs * 0.453592).toFixed(1)} kg`;
+    return `${lbs} lbs`;
+  };
 
   if (weightTrend) {
     if (weightTrend.trend === 'declining') {
-      insights.push({ id: 'wt_down', type: 'positive', icon: '📉', tag: 'Weight', title: 'Downward Trend', text: `Weight trending at ${weightTrend.weeklyRateStr}. The deficit is working — stay the course.` });
+      insights.push({ id: 'wt_down', type: 'positive', icon: '📉', tag: 'Weight', title: 'Downward Trend', text: `Weight trending at ${rateStr(weightTrend)}. The deficit is working — stay the course.` });
     } else if (weightTrend.trend === 'rising') {
-      insights.push({ id: 'wt_up', type: 'warning', icon: '📈', tag: 'Weight', title: 'Trend Reversed', text: `Weight trending up ${weightTrend.weeklyRateStr} over 14 days. Review evening meals and weekend intake.` });
+      insights.push({ id: 'wt_up', type: 'warning', icon: '📈', tag: 'Weight', title: 'Trend Reversed', text: `Weight trending up ${rateStr(weightTrend)} over 14 days. Review evening meals and weekend intake.` });
     } else {
       insights.push({ id: 'wt_stable', type: 'neutral', icon: '➡️', tag: 'Weight', title: 'Weight Plateaued', text: `Weight has been stable for 14 days. Try adding 10 min cardio or dropping 100 kcal from target.` });
     }
@@ -146,9 +164,10 @@ export function getInsightsList(store) {
 
   const totalDays = logs.length;
   if (totalDays >= 7) {
-    const lost = ((settings.startWeight || logs[0]?.weight || 0) - logs[logs.length - 1].weight).toFixed(1);
-    if (parseFloat(lost) > 0) {
-      insights.push({ id: 'total_prog', type: 'positive', icon: '🏆', tag: 'Progress', title: `${lost} lbs Total`, text: `Down ${lost} lbs across ${totalDays} tracked days. Every single logged day contributed to that number.` });
+    const lostLbs = ((settings.startWeight || logs[0]?.weight || 0) - logs[logs.length - 1].weight);
+    if (lostLbs > 0) {
+      const lostStr = fwLost(lostLbs.toFixed(1));
+      insights.push({ id: 'total_prog', type: 'positive', icon: '🏆', tag: 'Progress', title: `${lostStr} Total`, text: `Down ${lostStr} across ${totalDays} tracked days. Every single logged day contributed to that number.` });
     }
   }
 

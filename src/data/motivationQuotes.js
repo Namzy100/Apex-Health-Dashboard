@@ -97,12 +97,16 @@ export function getContextualQuote(store) {
 export function getContextualSubline(store, streak, remaining) {
   const logs = store.weightLogs || [];
   const settings = store.settings || {};
-  const lost = ((settings.startWeight || 185) - (logs[logs.length - 1]?.weight || settings.startWeight || 185)).toFixed(1);
+  const isMetric = settings.units === 'metric';
+  const lostLbs = (settings.startWeight || 185) - (logs[logs.length - 1]?.weight || settings.startWeight || 185);
+  const lostDisplay = isMetric
+    ? `${(lostLbs * 0.453592).toFixed(1)} kg`
+    : `${lostLbs.toFixed(1)} lbs`;
   const hour = new Date().getHours();
 
   const lines = [];
 
-  if (parseFloat(lost) > 0) lines.push(`Down ${lost} lbs since day one.`);
+  if (lostLbs > 0) lines.push(`Down ${lostDisplay} since day one.`);
   if (streak >= 14) lines.push(`${streak}-day tracking streak. Exceptional.`);
   else if (streak >= 7) lines.push(`${streak} days straight. Momentum is real.`);
   else if (streak >= 3) lines.push(`${streak} days running. Keep it going.`);

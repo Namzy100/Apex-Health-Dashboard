@@ -9,25 +9,17 @@
  *   3. Local heuristic / hardcoded fallback
  */
 
-const BACKEND = '/api/ai';
+import { apiPost } from '../utils/apiBase';
+
 const VITE_KEY = import.meta.env.VITE_OPENAI_API_KEY || null;
 const DEV = import.meta.env.DEV;
 
 // ── Backend helper ────────────────────────────────────────────────────────────
 
 async function callBackend(path, body) {
-  try {
-    const res = await fetch(`${BACKEND}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`Backend ${res.status}`);
-    return await res.json();
-  } catch (err) {
-    if (DEV) console.warn(`[AI] Backend ${path} failed:`, err.message);
-    return null;
-  }
+  const data = await apiPost(`/ai${path}`, body);
+  if (!data && DEV) console.warn(`[AI] Backend /ai${path} unavailable`);
+  return data;
 }
 
 // ── Direct OpenAI fallback (dev, if VITE_OPENAI_API_KEY is set) ───────────────
