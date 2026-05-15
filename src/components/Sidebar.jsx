@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   LayoutDashboard, Scale, Utensils, Footprints, Dumbbell,
   BookOpen, Camera, Sun, Lightbulb, Settings, Flame,
-  UtensilsCrossed, CalendarDays, ChefHat,
+  UtensilsCrossed, CalendarDays, ChefHat, Download,
 } from 'lucide-react';
 import { useApexStore, getDailyTotals } from '../store/apexStore';
 
@@ -11,6 +11,7 @@ const TOP_LINKS = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/food', icon: UtensilsCrossed, label: 'Food & Calories', badge: 'LOG' },
   { to: '/cook', icon: ChefHat, label: 'Cook Something', badge: 'AI' },
+  { to: '/import', icon: Download, label: 'Import Recipe', badge: 'NEW' },
 ];
 
 const MAIN_LINKS = [

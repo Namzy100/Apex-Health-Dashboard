@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChefHat, Zap, Plus, Clock, RefreshCw, CalendarPlus, Check } from 'lucide-react';
-import { buildRecipeFromInputs } from '../services/aiService';
+import { ChefHat, Zap, Plus, Clock, RefreshCw, CalendarPlus, Check, ChevronDown, ChevronUp, Beef } from 'lucide-react';
+import { getMultipleRecipeSuggestions } from '../services/aiService';
 import { addFoodEntry, getDailyTotals, useApexStore, getRecentFoods } from '../store/apexStore';
 import { addRecipeToCalendar } from '../services/calendarEvents';
 import { useToast } from '../components/Toast';
@@ -227,6 +227,122 @@ function AddToTodayButton({ recipe, onAddToCalendar }) {
   );
 }
 
+function RecipeSuggestionCard({ recipe, index, onAddToCalendar }) {
+  const [expanded, setExpanded] = useState(false);
+  const protPct = recipe.calories > 0 ? Math.round((recipe.protein * 4 / recipe.calories) * 100) : 0;
+  const carbPct = recipe.calories > 0 ? Math.round((recipe.carbs * 4 / recipe.calories) * 100) : 0;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.08, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+      className="rounded-2xl overflow-hidden"
+      style={{ background: 'rgba(255,255,255,0.04)', border: expanded ? '1px solid rgba(245,158,11,0.25)' : '1px solid rgba(255,255,255,0.07)' }}>
+
+      {/* Compact header — always visible */}
+      <button className="w-full text-left p-4" onClick={() => setExpanded(e => !e)}>
+        <div className="flex items-center gap-3">
+          <span style={{ fontSize: 28, flexShrink: 0 }}>{recipe.emoji || '🍽️'}</span>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm leading-tight" style={{ color: '#f5f4f2' }}>{recipe.name}</p>
+            <p className="text-xs mt-0.5 truncate" style={{ color: '#78716c', fontStyle: 'italic' }}>
+              {recipe.vibeDescription || recipe.whyItFits}
+            </p>
+            {/* Macro pills */}
+            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+              <span className="text-xs font-bold" style={{ color: '#f97316' }}>{recipe.calories} cal</span>
+              <span className="text-[10px]" style={{ color: '#57534e' }}>·</span>
+              <span className="text-xs" style={{ color: '#10b981' }}>{recipe.protein}g P</span>
+              <span className="text-[10px]" style={{ color: '#57534e' }}>·</span>
+              <span className="text-xs" style={{ color: '#3b82f6' }}>{recipe.carbs}g C</span>
+              <span className="text-[10px]" style={{ color: '#57534e' }}>·</span>
+              <span className="text-xs" style={{ color: '#f59e0b' }}>{recipe.fat}g F</span>
+              {recipe.prepTime > 0 && (
+                <>
+                  <span className="text-[10px]" style={{ color: '#57534e' }}>·</span>
+                  <span className="flex items-center gap-0.5 text-xs" style={{ color: '#78716c' }}>
+                    <Clock size={10} /> {recipe.prepTime}m
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="flex-shrink-0">
+            {expanded ? <ChevronUp size={14} style={{ color: '#57534e' }} /> : <ChevronDown size={14} style={{ color: '#57534e' }} />}
+          </div>
+        </div>
+        {/* Macro ratio bar */}
+        <div className="flex h-0.5 mt-3 rounded-full overflow-hidden">
+          <div style={{ width: `${protPct}%`, background: '#10b981' }} />
+          <div style={{ width: `${carbPct}%`, background: '#3b82f6' }} />
+          <div style={{ flex: 1, background: '#f59e0b' }} />
+        </div>
+      </button>
+
+      {/* Expanded detail */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden">
+            <div className="px-4 pb-4 space-y-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+
+              {recipe.whyItFits && (
+                <div className="mt-3 p-3 rounded-xl" style={{ background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.15)' }}>
+                  <p className="text-xs" style={{ color: '#10b981' }}>{recipe.whyItFits}</p>
+                </div>
+              )}
+
+              {recipe.ingredients?.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: '#3d3a36' }}>Ingredients</p>
+                  <ul className="space-y-1.5">
+                    {recipe.ingredients.map((ing, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs" style={{ color: '#a8a29e' }}>
+                        <div className="w-1 h-1 rounded-full mt-1.5 flex-shrink-0" style={{ background: '#f59e0b', opacity: 0.7 }} /> {ing}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {recipe.extraIngredients?.length > 0 && (
+                <div className="p-3 rounded-xl" style={{ background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.15)' }}>
+                  <p className="text-xs font-bold mb-1" style={{ color: '#f97316' }}>Also need:</p>
+                  {recipe.extraIngredients.map((ing, i) => <p key={i} className="text-xs" style={{ color: '#a8a29e' }}>• {ing}</p>)}
+                </div>
+              )}
+
+              {recipe.steps?.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: '#3d3a36' }}>Steps</p>
+                  <ol className="space-y-2">
+                    {recipe.steps.map((step, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs" style={{ color: '#a8a29e' }}>
+                        <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0"
+                          style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.2)' }}>
+                          {i + 1}
+                        </span>
+                        {step}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+
+              <AddToTodayButton recipe={recipe} onAddToCalendar={() => onAddToCalendar(recipe)} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
 export default function CookSomething() {
   const [store] = useApexStore();
   const [mood,              setMood]              = useState('');
@@ -239,7 +355,7 @@ export default function CookSomething() {
   const [spiceLevel,        setSpiceLevel]        = useState('Medium');
   const [equipmentList,     setEquipmentList]     = useState(['Stovetop']);
   const [loading,           setLoading]           = useState(false);
-  const [recipe,            setRecipe]            = useState(null);
+  const [recipes,           setRecipes]           = useState([]);
   const toast = useToast();
 
   const totals   = getDailyTotals();
@@ -253,9 +369,9 @@ export default function CookSomething() {
 
   const handleGenerate = async () => {
     setLoading(true);
-    setRecipe(null);
+    setRecipes([]);
     try {
-      const result = await buildRecipeFromInputs({
+      const results = await getMultipleRecipeSuggestions({
         mood,
         vibe,
         ingredients,
@@ -271,8 +387,8 @@ export default function CookSomething() {
         remainingFat:     remaining.fat,
         recentFoods:      getRecentFoods().slice(0, 8),
         userPreferences:  { avoidFoods: [] },
-      });
-      setRecipe(result);
+      }, 4);
+      setRecipes(Array.isArray(results) ? results : [results]);
     } catch {
       toast('Something went wrong. Try again.', 'error');
     } finally {
@@ -280,8 +396,7 @@ export default function CookSomething() {
     }
   };
 
-  const handleAddToCalendar = () => {
-    if (!recipe) return;
+  const handleAddToCalendar = (recipe) => {
     addRecipeToCalendar(recipe);
     toast(`${recipe.emoji || '🍽️'} ${recipe.name} added to calendar`, 'success');
   };
@@ -400,15 +515,15 @@ export default function CookSomething() {
                 letterSpacing: '0.02em',
               }}>
               {loading
-                ? <><RefreshCw size={15} className="animate-spin" />Building your recipe…</>
-                : <><ChefHat size={15} />Build Recipe</>}
+                ? <><RefreshCw size={15} className="animate-spin" />Finding options…</>
+                : <><ChefHat size={15} />Get 4 Recipe Ideas</>}
             </motion.button>
           </div>
 
           {/* Result panel */}
           <div className="md:col-span-2">
             <AnimatePresence mode="wait">
-              {!recipe && !loading && (
+              {recipes.length === 0 && !loading && (
                 <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                   className="relative flex flex-col items-center justify-center rounded-2xl overflow-hidden"
                   style={{ height: 420, border: '1px solid rgba(255,255,255,0.07)' }}>
@@ -423,9 +538,9 @@ export default function CookSomething() {
                       style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.18)' }}>
                       <ChefHat size={28} style={{ color: '#f59e0b' }} />
                     </div>
-                    <p className="text-base font-bold mb-2" style={{ color: '#78716c' }}>Your recipe will appear here</p>
+                    <p className="text-base font-bold mb-2" style={{ color: '#78716c' }}>4 options will appear here</p>
                     <p className="text-xs leading-relaxed" style={{ color: '#3d3a36' }}>
-                      Pick your mood, vibe, and ingredients,<br />then hit Build Recipe.
+                      Pick your mood, vibe, and ingredients,<br />then hit Get 4 Recipe Ideas.
                     </p>
                   </div>
                 </motion.div>
@@ -442,8 +557,8 @@ export default function CookSomething() {
                     <ChefHat size={28} style={{ color: '#f59e0b' }} />
                   </motion.div>
                   <div className="text-center">
-                    <p className="text-sm font-bold" style={{ color: '#f5f4f2' }}>Building your recipe…</p>
-                    <p className="text-xs mt-1.5" style={{ color: '#78716c' }}>Calculating macros and steps</p>
+                    <p className="text-sm font-bold" style={{ color: '#f5f4f2' }}>Finding 4 options for you…</p>
+                    <p className="text-xs mt-1.5" style={{ color: '#78716c' }}>AI is building distinct recipe ideas</p>
                   </div>
                   <div className="flex gap-1.5">
                     {[0, 1, 2].map(i => (
@@ -454,9 +569,19 @@ export default function CookSomething() {
                 </motion.div>
               )}
 
-              {recipe && !loading && (
-                <motion.div key="recipe" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  <RecipeCard recipe={recipe} onAddToCalendar={handleAddToCalendar} />
+              {recipes.length > 0 && !loading && (
+                <motion.div key="recipes" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs font-semibold" style={{ color: '#78716c' }}>{recipes.length} options — tap to expand</p>
+                    <motion.button whileTap={{ scale: 0.93 }} onClick={handleGenerate}
+                      className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg"
+                      style={{ background: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.2)' }}>
+                      <RefreshCw size={11} /> Regenerate
+                    </motion.button>
+                  </div>
+                  {recipes.map((r, i) => (
+                    <RecipeSuggestionCard key={`${r.name}-${i}`} recipe={r} index={i} onAddToCalendar={handleAddToCalendar} />
+                  ))}
                 </motion.div>
               )}
             </AnimatePresence>

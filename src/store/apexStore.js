@@ -43,6 +43,7 @@ function defaultStore() {
     },
     calendarEvents: defaultCalendarEvents(),
     dailyCheckins: {},
+    importedRecipes: [],
   };
 }
 
@@ -356,6 +357,33 @@ export function getWorkouts() {
 export function addWorkout(workout) {
   const store = getOrInitStore();
   writeStore({ ...store, workouts: [workout, ...(store.workouts || [])] });
+}
+
+// ── Imported recipes ──────────────────────────────────────────────────────────
+
+export function getImportedRecipes() {
+  return getOrInitStore().importedRecipes || [];
+}
+
+export function saveImportedRecipe(recipe) {
+  const store = getOrInitStore();
+  const existing = (store.importedRecipes || []);
+  const idx = existing.findIndex(r => r.id === recipe.id);
+  const updated = idx >= 0
+    ? existing.map((r, i) => i === idx ? recipe : r)
+    : [recipe, ...existing];
+  writeStore({ ...store, importedRecipes: updated });
+}
+
+export function deleteImportedRecipe(id) {
+  const store = getOrInitStore();
+  writeStore({ ...store, importedRecipes: (store.importedRecipes || []).filter(r => r.id !== id) });
+}
+
+export function updateImportedRecipe(id, changes) {
+  const store = getOrInitStore();
+  const updated = (store.importedRecipes || []).map(r => r.id === id ? { ...r, ...changes } : r);
+  writeStore({ ...store, importedRecipes: updated });
 }
 
 // ── Export / Import ───────────────────────────────────────────────────────────

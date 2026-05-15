@@ -138,6 +138,122 @@ Return ONLY this exact JSON (no markdown, no extra text):
   }
 });
 
+// ── POST /api/ai/import-recipe — parse social caption → structured recipe ─────
+app.post('/api/ai/import-recipe', async (req, res) => {
+  const { text, url, notes, userMacroGoals, dietaryPreferences } = req.body || {};
+  if (!text) return res.status(400).json({ error: 'text required' });
+
+  const prompt = `You are a recipe parser. Extract a structured recipe from the following text (which may be a social media caption, comment, or raw recipe post).
+
+TEXT:
+"""
+${text.slice(0, 3000)}
+"""
+
+${notes ? `User notes: ${notes}` : ''}
+${dietaryPreferences ? `User dietary preferences: ${dietaryPreferences}` : ''}
+
+Return ONLY this exact JSON (no markdown, no extra text):
+{
+  "name": "Recipe name",
+  "emoji": "🍽️",
+  "calories": 0,
+  "protein": 0,
+  "carbs": 0,
+  "fat": 0,
+  "servings": 2,
+  "prepTime": 15,
+  "cookTime": 20,
+  "ingredients": ["ingredient with quantity"],
+  "steps": ["step 1", "step 2"],
+  "cuisine": "Indian/Italian/American/etc or Unknown",
+  "mealType": "Breakfast/Lunch/Dinner/Snack/Any",
+  "tags": ["high-protein", "quick", "meal-prep", etc],
+  "notes": "any useful tip from the original",
+  "confidence": 80,
+  "image": null
+}
+
+Rules:
+- If macros aren't in the text, estimate from ingredients (realistic USDA values)
+- confidence: 90+ if macros stated, 70-89 if you estimated from clear ingredients, 40-69 if text is vague
+- tags: include relevant ones like high-protein, vegetarian, vegan, keto, quick, meal-prep, comfort-food, etc
+- If the text is not a recipe at all, still return best guess with low confidence (30)`;
+
+  try {
+    const content = await callOpenAI([{ role: 'user', content: prompt }], 'gpt-4o-mini', 1200);
+    const cleaned = content.trim().replace(/^```json?\n?/, '').replace(/```$/, '').trim();
+    const recipe = JSON.parse(cleaned);
+    res.json({ recipe });
+  } catch (err) {
+    console.error('[AI/import-recipe]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai/recipe-suggestions — return 3-5 recipe options ───────────────
+app.post('/api/ai/recipe-suggestions', async (req, res) => {
+  const {
+    mood, ingredients, cuisine, mealType, timeAvailable,
+    remainingCals, remainingProtein, remainingCarbs, remainingFat,
+    dietaryPreference, spiceLevel, equipment, vibe,
+    recentFoods, userPreferences, count = 4,
+  } = req.body || {};
+
+  const prompt = `You are a personal nutrition coach helping someone on a fitness cut (goal: lose fat, maintain muscle).
+
+MACRO BUDGET REMAINING TODAY:
+- Calories: ${remainingCals || '?'} kcal
+- Protein: ${remainingProtein || '?'}g
+- Carbs: ${remainingCarbs || '?'}g
+- Fat: ${remainingFat || '?'}g
+
+USER PREFERENCES:
+- Mood: ${mood || 'normal'}
+- Craving / Vibe: ${vibe || 'not specified'}
+- Cuisine: ${cuisine || 'any'}
+- Meal type: ${mealType || 'any'}
+- Dietary notes: ${dietaryPreference || 'none'}
+- Spice level: ${spiceLevel || 'medium'}
+- Equipment available: ${equipment || 'stovetop, oven'}
+- Time available: ${timeAvailable || '30'} minutes
+- Ingredients at home: ${ingredients || 'common pantry staples'}
+${recentFoods?.length ? `- Recently ate: ${recentFoods.slice(0, 5).map(f => f.name).join(', ')}` : ''}
+${userPreferences?.avoidFoods?.length ? `- Avoids: ${userPreferences.avoidFoods.join(', ')}` : ''}
+
+Generate exactly ${count} distinct recipe options that fit within the macro budget. Make them meaningfully different from each other (different protein sources, cuisines, or styles).
+
+Return ONLY this JSON array (no markdown):
+[
+  {
+    "name": "Recipe Name",
+    "emoji": "🍽️",
+    "calories": 0,
+    "protein": 0,
+    "carbs": 0,
+    "fat": 0,
+    "prepTime": 0,
+    "vibeDescription": "One-sentence atmospheric description",
+    "ingredients": ["ingredient 1", "ingredient 2"],
+    "steps": ["step 1", "step 2"],
+    "whyItFits": "Why this fits today's macros and mood",
+    "extraIngredients": [],
+    "confidenceScore": 85,
+    "tags": ["high-protein", "quick"]
+  }
+]`;
+
+  try {
+    const content = await callOpenAI([{ role: 'user', content: prompt }], 'gpt-4o-mini', 2000);
+    const cleaned = content.trim().replace(/^```json?\n?/, '').replace(/```$/, '').trim();
+    const recipes = JSON.parse(cleaned);
+    res.json({ recipes: Array.isArray(recipes) ? recipes : [recipes] });
+  } catch (err) {
+    console.error('[AI/recipe-suggestions]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/ai/coach — AI coaching insight ─────────────────────────────────
 app.post('/api/ai/coach', async (req, res) => {
   const { context } = req.body || {};

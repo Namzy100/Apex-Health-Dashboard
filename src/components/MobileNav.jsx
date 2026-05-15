@@ -1,11 +1,11 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, UtensilsCrossed, ChefHat, Lightbulb, Settings } from 'lucide-react';
+import { LayoutDashboard, UtensilsCrossed, ChefHat, Download, Settings } from 'lucide-react';
 
 const TABS = [
   { to: '/',        icon: LayoutDashboard, label: 'Home' },
   { to: '/food',    icon: UtensilsCrossed, label: 'Food' },
   { to: '/cook',    icon: ChefHat,         label: 'Cook' },
-  { to: '/insights',icon: Lightbulb,       label: 'Insights' },
+  { to: '/import',  icon: Download,        label: 'Import' },
   { to: '/settings',icon: Settings,        label: 'Settings' },
 ];
 

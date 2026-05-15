@@ -187,6 +187,110 @@ function getLocalRecipeFallback({ remainingProtein, mealType, mood, vibe, cuisin
   return FALLBACKS[Math.floor(Math.random() * FALLBACKS.length)];
 }
 
+// ── Import recipe from text ───────────────────────────────────────────────────
+
+export async function importRecipeFromText(text, opts = {}) {
+  const { url = '', notes = '', userMacroGoals = {}, dietaryPreferences = '' } = opts;
+
+  // 1. Try backend
+  const backendResult = await callBackend('/import-recipe', { text, url, notes, userMacroGoals, dietaryPreferences });
+  if (backendResult?.recipe) return backendResult.recipe;
+
+  // 2. Direct OpenAI fallback
+  if (VITE_KEY) {
+    const prompt = `Parse this text into a structured recipe JSON.
+Text: """${text.slice(0, 2000)}"""
+Return ONLY: {"name":"...","emoji":"...","calories":0,"protein":0,"carbs":0,"fat":0,"servings":2,"prepTime":15,"cookTime":20,"ingredients":[],"steps":[],"cuisine":"Unknown","mealType":"Any","tags":[],"notes":"","confidence":70,"image":null}`;
+    const content = await callOpenAIDirect([{ role: 'user', content: prompt }], 1000);
+    if (content) {
+      try { return JSON.parse(content.trim().replace(/^```json?\n?/, '').replace(/```$/, '')); } catch {}
+    }
+  }
+
+  // 3. Local regex fallback (imported from recipeImporter)
+  return null;
+}
+
+// ── Multi-recipe suggestions ──────────────────────────────────────────────────
+
+export async function getMultipleRecipeSuggestions(params, count = 4) {
+  // 1. Try backend
+  const backendResult = await callBackend('/recipe-suggestions', { ...params, count });
+  if (backendResult?.recipes?.length) return backendResult.recipes;
+
+  // 2. Try direct OpenAI
+  if (VITE_KEY) {
+    const { mood, ingredients, cuisine, mealType, timeAvailable, remainingCals, remainingProtein, remainingCarbs, remainingFat, dietaryPreference, spiceLevel, vibe } = params;
+    const prompt = `You are a nutrition coach on a fitness cut. Generate ${count} distinct recipe options.
+Macros: ${remainingCals}kcal, ${remainingProtein}g protein, ${remainingCarbs}g carbs, ${remainingFat}g fat.
+Vibe: ${vibe || ''} | Cuisine: ${cuisine || 'any'} | Diet: ${dietaryPreference || 'none'} | Spice: ${spiceLevel || 'medium'}
+Return ONLY JSON array: [{"name":"...","emoji":"...","calories":0,"protein":0,"carbs":0,"fat":0,"prepTime":0,"vibeDescription":"...","ingredients":[],"steps":[],"whyItFits":"...","extraIngredients":[],"confidenceScore":80,"tags":[]}]`;
+    const content = await callOpenAIDirect([{ role: 'user', content: prompt }], 2000);
+    if (content) {
+      try {
+        const arr = JSON.parse(content.trim().replace(/^```json?\n?/, '').replace(/```$/, ''));
+        if (Array.isArray(arr)) return arr;
+      } catch {}
+    }
+  }
+
+  // 3. Local fallback — return 4 distinct hardcoded options
+  return getMultipleLocalFallbacks(params, count);
+}
+
+function getMultipleLocalFallbacks({ remainingCals = 500, dietaryPreference, cuisine }, count = 4) {
+  const ALL = [
+    {
+      name: 'Quick Protein Bowl', emoji: '🍗',
+      calories: 450, protein: 42, carbs: 35, fat: 12, prepTime: 15,
+      vibeDescription: 'Clean, fuelling, gets the job done.',
+      ingredients: ['Chicken breast 180g', 'Cooked rice 150g', 'Mixed vegetables', 'Soy sauce, sesame oil'],
+      steps: ['Cook chicken in a pan 12 min.', 'Warm rice.', 'Combine in bowl with sauce.'],
+      whyItFits: 'High protein, balanced macros.', extraIngredients: [], confidenceScore: 75, tags: ['high-protein', 'meal-prep'],
+    },
+    {
+      name: 'Paneer Scramble Wrap', emoji: '🌯',
+      calories: 380, protein: 28, carbs: 30, fat: 16, prepTime: 12,
+      vibeDescription: 'Warm, spiced, satisfying without being heavy.',
+      ingredients: ['Paneer 150g crumbled', 'Whole wheat roti', 'Onion, tomato, spices', 'Greek yogurt'],
+      steps: ['Sauté onion and tomato. Add crumbled paneer.', 'Wrap in roti with yogurt.'],
+      whyItFits: 'Great vegetarian protein.', extraIngredients: [], confidenceScore: 72, tags: ['vegetarian', 'indian'],
+    },
+    {
+      name: 'Greek Yogurt Power Bowl', emoji: '🥗',
+      calories: 420, protein: 38, carbs: 28, fat: 15, prepTime: 10,
+      vibeDescription: 'Light, Mediterranean, no-cook simplicity.',
+      ingredients: ['Greek yogurt 200g', 'Cucumber, tomato, olives', 'Feta 30g', 'Chickpeas 100g', 'Olive oil, lemon'],
+      steps: ['Combine salad ingredients.', 'Top with yogurt and feta.', 'Dress with olive oil and lemon.'],
+      whyItFits: 'High protein, anti-inflammatory.', extraIngredients: [], confidenceScore: 70, tags: ['high-protein', 'no-cook', 'mediterranean'],
+    },
+    {
+      name: 'Egg & Avocado Toast', emoji: '🥑',
+      calories: 320, protein: 18, carbs: 28, fat: 16, prepTime: 8,
+      vibeDescription: 'Cosy, satisfying, ready in under 10 minutes.',
+      ingredients: ['2 eggs', '2 slices whole wheat bread', '1/2 avocado', 'Salt, pepper, chilli flakes'],
+      steps: ['Toast bread.', 'Fry or scramble eggs.', 'Mash avocado on toast, top with eggs.'],
+      whyItFits: 'Quick complete protein with healthy fats.', extraIngredients: [], confidenceScore: 78, tags: ['breakfast', 'quick'],
+    },
+    {
+      name: 'Tuna Salad Stuffed Peppers', emoji: '🫑',
+      calories: 290, protein: 32, carbs: 14, fat: 10, prepTime: 10,
+      vibeDescription: 'Fresh, crunchy, zero cooking required.',
+      ingredients: ['Canned tuna 160g', '2 bell peppers halved', 'Greek yogurt 2 tbsp', 'Celery, red onion, lemon'],
+      steps: ['Mix tuna with yogurt and veg.', 'Fill pepper halves.', 'Squeeze lemon and serve.'],
+      whyItFits: 'Ultra-lean protein, keto-friendly, done in 10 minutes.', extraIngredients: [], confidenceScore: 80, tags: ['high-protein', 'keto', 'no-cook'],
+    },
+  ];
+
+  const isVeg = /vegetarian|vegan/i.test(dietaryPreference || '');
+  const isIndian = /indian/i.test(cuisine || '') || /indian/i.test(dietaryPreference || '');
+  let pool = isVeg ? ALL.filter(r => r.tags.includes('vegetarian') || r.tags.includes('no-cook')) : ALL;
+  if (isIndian) pool = [ALL[1], ...ALL.filter(r => r !== ALL[1])];
+  pool = pool.filter(r => r.calories <= (remainingCals + 100));
+  if (pool.length < count) pool = ALL;
+  return pool.slice(0, count);
+}
+
 // ── Food recommendations ──────────────────────────────────────────────────────
 
 export async function getFoodRecommendations({ remainingCalories, remainingProtein }) {
