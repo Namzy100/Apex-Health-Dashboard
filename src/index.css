@@ -1,7 +1,10 @@
 @import "tailwindcss";
 
 /* ─── Base ──────────────────────────────────────────────── */
-*, *::before, *::after { box-sizing: border-box; }
+*, *::before, *::after {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent; /* iOS: remove tap flash */
+}
 
 body {
   background: #07060a;
@@ -9,9 +12,42 @@ body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   margin: 0;
   -webkit-font-smoothing: antialiased;
+  /* iOS overscroll bounce — keep it but prevent layout shift */
+  overscroll-behavior-y: none;
 }
 
 #root { width: 100%; min-height: 100svh; }
+
+/* ─── iOS touch & scroll fixes ──────────────────────────── */
+/* Momentum scrolling on iOS for any overflow-y containers */
+.overflow-y-auto, .overflow-x-auto, [class*="overflow-y"], [class*="overflow-x"] {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* All interactive elements: remove callout, use manipulation */
+button, a, [role="button"], [tabindex] {
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Prevent iOS from zooming on input focus (font-size >= 16px prevents it) */
+input, textarea, select {
+  font-size: max(16px, 1em);
+  font-family: inherit;
+  color: inherit;
+}
+
+/* Restore correct placeholder color after font-size override */
+input::placeholder, textarea::placeholder { color: #57534e; }
+
+/* iOS standalone PWA: status bar safe area */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .ios-standalone-header {
+    padding-top: max(env(safe-area-inset-top), 0px);
+  }
+}
 
 /* ─── Glass utilities ───────────────────────────────────── */
 @layer utilities {
@@ -131,9 +167,31 @@ input::placeholder, textarea::placeholder {
 
 /* ─── Mobile / safe-area utilities ─────────────────────── */
 @layer utilities {
-  .pb-safe { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
-  .pb-nav  { padding-bottom: calc(4rem + max(0px, env(safe-area-inset-bottom))); }
+  .pb-safe  { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+  /* 72px nav + 8px gap + safe area */
+  .pb-nav   { padding-bottom: calc(80px + max(0px, env(safe-area-inset-bottom))); }
   .min-touch { min-height: 44px; min-width: 44px; }
+
+  /* Safe area sides */
+  .pl-safe  { padding-left: max(1rem, env(safe-area-inset-left)); }
+  .pr-safe  { padding-right: max(1rem, env(safe-area-inset-right)); }
+
+  /* Bottom sheet safe area */
+  .pb-sheet { padding-bottom: max(1.5rem, calc(env(safe-area-inset-bottom) + 0.5rem)); }
+
+  /* Tappable card active state */
+  .tap-card {
+    cursor: pointer;
+    transition: filter 0.1s;
+  }
+  .tap-card:active { filter: brightness(1.08); }
+
+  /* Scroll snap for carousels */
+  .snap-x-mandatory {
+    scroll-snap-type: x mandatory;
+    -webkit-scroll-snap-type: x mandatory;
+  }
+  .snap-start { scroll-snap-align: start; }
 }
 
 /* ─── Recharts custom ───────────────────────────────────── */
