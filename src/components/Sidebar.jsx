@@ -93,7 +93,7 @@ export default function Sidebar() {
   })();
 
   return (
-    <aside className="fixed top-0 left-0 h-screen w-[220px] flex flex-col z-50 overflow-hidden"
+    <aside className="fixed top-0 left-0 h-screen w-[220px] hidden md:flex flex-col z-50 overflow-hidden"
       style={{ background: 'linear-gradient(180deg, #121010 0%, #0d0c0c 100%)', borderRight: '1px solid rgba(255,255,255,0.05)' }}>
 
       {/* Ambient glow */}

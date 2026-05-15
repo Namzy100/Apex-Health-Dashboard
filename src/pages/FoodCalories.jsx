@@ -47,10 +47,11 @@ function FoodEntryRow({ entry, onRemove }) {
       </div>
       <div className="flex items-center gap-3 flex-shrink-0">
         <span className="text-xs font-medium" style={{ color: '#a8a29e' }}>{entry.protein}g P</span>
+        {/* Always visible on mobile, hover-only on desktop */}
         <button onClick={() => onRemove(entry.id)}
-          className="w-6 h-6 rounded-full items-center justify-center hidden group-hover:flex transition-all"
+          className="w-8 h-8 rounded-full flex items-center justify-center transition-all md:opacity-0 md:group-hover:opacity-100 min-touch"
           style={{ background: 'rgba(239,68,68,0.15)' }}>
-          <X size={11} style={{ color: '#ef4444' }} />
+          <X size={13} style={{ color: '#ef4444' }} />
         </button>
       </div>
     </motion.div>
@@ -218,11 +219,48 @@ export default function FoodCalories() {
   const recents = getRecentFoods().slice(0, 15);
   const showDropdown = query.trim().length > 0;
 
+  const [fabVisible, setFabVisible] = useState(false);
+
+  // Show FAB when search is not visible (user scrolled past it)
+  useEffect(() => {
+    const el = searchRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([entry]) => setFabVisible(!entry.isIntersecting), { threshold: 0 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  const scrollToSearch = () => {
+    searchRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => searchRef.current?.focus(), 300);
+  };
+
   return (
     <div style={{ minHeight: '100vh', background: '#111010' }}>
 
+      {/* Sticky FAB — mobile only, appears after search scrolls out of view */}
+      <AnimatePresence>
+        {fabVisible && (
+          <motion.button
+            initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+            onClick={scrollToSearch}
+            className="fixed z-40 md:hidden flex items-center justify-center rounded-full shadow-2xl"
+            style={{
+              bottom: 'calc(4.5rem + max(0px, env(safe-area-inset-bottom)))',
+              right: '1.25rem',
+              width: 52,
+              height: 52,
+              background: 'linear-gradient(135deg, #f59e0b, #f97316)',
+              boxShadow: '0 8px 32px rgba(245,158,11,0.45)',
+            }}>
+            <Plus size={22} style={{ color: '#000' }} />
+          </motion.button>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
-      <div className="px-6 pt-8 pb-4">
+      <div className="px-4 md:px-6 pt-8 pb-4">
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
           <p className="text-xs font-medium mb-1" style={{ color: '#57534e' }}>
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
@@ -233,7 +271,7 @@ export default function FoodCalories() {
 
       {/* Macro summary */}
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-        className="mx-6 mb-5 rounded-2xl p-4"
+        className="mx-4 md:mx-6 mb-5 rounded-2xl p-4"
         style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
         <div className="flex items-center justify-between mb-3">
           <div>
@@ -243,7 +281,7 @@ export default function FoodCalories() {
               <span className="text-sm" style={{ color: '#57534e' }}>/ {targets.calories}</span>
             </div>
           </div>
-          <div className="flex gap-5 items-center">
+          <div className="flex gap-3 md:gap-5 items-center">
             {[
               { label: 'Protein', value: totals.protein, target: targets.protein, unit: 'g', color: '#f59e0b', pct: pPct },
               { label: 'Carbs', value: totals.carbs, target: targets.carbs, unit: 'g', color: '#10b981', pct: cPct },
@@ -277,7 +315,7 @@ export default function FoodCalories() {
       </motion.div>
 
       {/* Search */}
-      <div className="px-6 mb-4 relative z-30">
+      <div className="px-4 md:px-6 mb-4 relative z-30">
         <div className="relative">
           <Search size={15} className="absolute left-4 top-1/2 -translate-y-1/2" style={{ color: '#57534e' }} />
           <input ref={searchRef} value={query} onChange={e => setQuery(e.target.value)}
@@ -291,7 +329,7 @@ export default function FoodCalories() {
           {showDropdown && (
             <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.15 }}
-              className="absolute left-6 right-6 top-full mt-2 rounded-2xl overflow-hidden z-50"
+              className="absolute left-0 right-0 top-full mt-2 rounded-2xl overflow-hidden z-50"
               style={{ background: '#1c1a18', border: '1px solid rgba(255,255,255,0.09)', boxShadow: '0 24px 64px rgba(0,0,0,0.6)', maxHeight: 380, overflowY: 'auto' }}>
               <div className="px-4 py-2.5 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                 <p className="text-xs" style={{ color: '#57534e' }}>Adding to</p>
@@ -315,7 +353,7 @@ export default function FoodCalories() {
       </div>
 
       {/* Meal selector */}
-      <div className="px-6 mb-5">
+      <div className="px-4 md:px-6 mb-5">
         <div className="grid grid-cols-4 gap-2">
           {MEALS.map(meal => {
             const meta = MEAL_META[meal];
@@ -323,7 +361,7 @@ export default function FoodCalories() {
             const isActive = activeMeal === meal;
             return (
               <button key={meal} onClick={() => setActiveMeal(meal)}
-                className="rounded-xl py-3 px-2 text-center transition-all"
+                className="rounded-xl py-3.5 px-2 text-center transition-all min-touch"
                 style={{
                   background: isActive ? `${meta.color}15` : 'rgba(255,255,255,0.04)',
                   border: `1px solid ${isActive ? `${meta.color}30` : 'rgba(255,255,255,0.06)'}`,
@@ -338,13 +376,13 @@ export default function FoodCalories() {
       </div>
 
       {/* Main content */}
-      <div className="px-6 pb-10">
+      <div className="px-4 md:px-6 pb-24 md:pb-10">
 
-        {/* Tabs */}
-        <div className="flex gap-1 p-1 rounded-xl mb-5" style={{ background: 'rgba(255,255,255,0.04)', width: 'fit-content' }}>
+        {/* Tabs — scrollable on mobile */}
+        <div className="flex gap-1 p-1 rounded-xl mb-5 overflow-x-auto" style={{ background: 'rgba(255,255,255,0.04)', scrollbarWidth: 'none' }}>
           {TABS.map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
-              className="px-4 py-1.5 rounded-lg text-xs font-medium transition-all"
+              className="px-4 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap flex-shrink-0 min-touch"
               style={{
                 background: activeTab === tab ? 'rgba(255,255,255,0.09)' : 'transparent',
                 color: activeTab === tab ? '#f5f4f2' : '#57534e',

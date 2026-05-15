@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ToastProvider } from './components/Toast';
 import Sidebar from './components/Sidebar';
+import MobileNav from './components/MobileNav';
 import Dashboard from './pages/Dashboard';
 import WeightTracker from './pages/WeightTracker';
 import MacroTracker from './pages/MacroTracker';
@@ -21,7 +22,7 @@ export default function App() {
       <ToastProvider>
         <div className="flex" style={{ minHeight: '100svh', background: '#111010' }}>
           <Sidebar />
-          <main className="flex-1 overflow-x-hidden" style={{ marginLeft: 220 }}>
+          <main className="flex-1 overflow-x-hidden md:ml-[220px]">
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/food" element={<FoodCalories />} />
@@ -38,6 +39,7 @@ export default function App() {
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </main>
+          <MobileNav />
         </div>
       </ToastProvider>
     </BrowserRouter>

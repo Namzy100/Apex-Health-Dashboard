@@ -83,7 +83,7 @@ export default function Settings() {
     <div style={{ minHeight: '100vh', background: '#111010' }}>
 
       {/* Header */}
-      <div className="px-6 pt-8 pb-6">
+      <div className="px-4 md:px-6 pt-8 pb-6">
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           <div className="flex items-center gap-2 mb-1">
             <SettingsIcon size={18} style={{ color: '#f59e0b' }} />
@@ -93,12 +93,12 @@ export default function Settings() {
         </motion.div>
       </div>
 
-      <div className="px-6 pb-10 max-w-3xl space-y-4">
+      <div className="px-4 md:px-6 pb-24 md:pb-10 max-w-3xl space-y-4">
 
         {/* Profile */}
         <Card delay={0.05}>
           <SectionHeader icon={User} title="Profile & Identity" />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="col-span-2">
               <Field label="Your Name" value={settings.name} onChange={set('name')} />
             </div>
@@ -111,7 +111,7 @@ export default function Settings() {
         {/* Weight Goals */}
         <Card delay={0.1}>
           <SectionHeader icon={Target} title="Weight Goals" color="#10b981" />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Start Weight" value={settings.startWeight} onChange={set('startWeight')} type="number" unit="lbs" />
             <Field label="Goal Weight" value={settings.goalWeight} onChange={set('goalWeight')} type="number" unit="lbs" />
           </div>
@@ -127,7 +127,7 @@ export default function Settings() {
         {/* Daily Targets */}
         <Card delay={0.15}>
           <SectionHeader icon={BarChart2} title="Daily Nutrition Targets" color="#6366f1" />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Calories" value={settings.dailyCalorieTarget} onChange={set('dailyCalorieTarget')} type="number" unit="kcal" />
             <Field label="Protein" value={settings.dailyProteinTarget} onChange={set('dailyProteinTarget')} type="number" unit="g" hint="~1g per lb bodyweight" />
             <Field label="Carbs" value={settings.dailyCarbTarget} onChange={set('dailyCarbTarget')} type="number" unit="g" />

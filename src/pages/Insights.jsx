@@ -1,170 +1,171 @@
 import { motion } from 'framer-motion';
-import { Lightbulb, TrendingDown, Trophy, Zap, Target, Star, ArrowUp, ArrowDown } from 'lucide-react';
-import { weightLogs, macroLogs, stepLogs, workouts, dailyNotes, profile } from '../data/sampleData';
+import { Lightbulb, ArrowUp, ArrowDown, Minus } from 'lucide-react';
+import { useApexStore } from '../store/apexStore';
+import { getInsightsList, detectWeightTrend } from '../services/patternDetection';
 import GlassCard from '../components/GlassCard';
 
-function computeInsights() {
-  const insights = [];
+const TYPE_COLOR = {
+  positive: '#10b981',
+  warning:  '#f59e0b',
+  neutral:  '#78716c',
+};
 
-  // Protein consistency
-  const proteinHit = macroLogs.filter(d => d.protein >= profile.dailyProteinTarget).length;
-  const pctProtein = Math.round((proteinHit / macroLogs.length) * 100);
-  insights.push({
-    icon: Trophy, accent: '#10b981', tag: 'Nutrition', trend: 'up',
-    title: `${pctProtein}% protein consistency`,
-    body: `You hit your ${profile.dailyProteinTarget}g protein target on ${proteinHit} of ${macroLogs.length} days tracked. ${pctProtein >= 80 ? 'Elite consistency — this is protecting your muscle during the cut.' : 'Push this above 80% to maximize muscle retention.'}`,
-    value: `${pctProtein}%`,
-  });
-
-  // Calorie average
-  const recentMacros = macroLogs.slice(-7);
-  const avgCals = Math.round(recentMacros.reduce((s, d) => s + d.calories, 0) / recentMacros.length);
-  const deficit = profile.dailyCalorieTarget - avgCals;
-  insights.push({
-    icon: Zap, accent: '#f97316', tag: 'Calories', trend: deficit > 0 ? 'up' : 'down',
-    title: `Avg ${avgCals} kcal/day this week`,
-    body: `Your 7-day calorie average is ${avgCals} kcal — ${deficit > 0 ? `${deficit} below your ${profile.dailyCalorieTarget} target. Solid deficit for fat loss.` : `${Math.abs(deficit)} above your target. Tighten the nutrition if the scale isn't moving.`}`,
-    value: `${deficit > 0 ? '+' : ''}${deficit}`,
-  });
-
-  // Weight pace
-  const firstWeight = weightLogs[0].weight;
-  const lastWeight = weightLogs[weightLogs.length - 1].weight;
-  const weeks = weightLogs.length / 7;
-  const lbsPerWeek = ((firstWeight - lastWeight) / weeks).toFixed(2);
-  const isIdeal = parseFloat(lbsPerWeek) >= 0.5 && parseFloat(lbsPerWeek) <= 1.5;
-  insights.push({
-    icon: TrendingDown, accent: isIdeal ? '#10b981' : '#f59e0b', tag: 'Weight', trend: 'up',
-    title: `Losing ${lbsPerWeek} lbs/week`,
-    body: `Your average loss rate over the tracked period is ${lbsPerWeek} lbs/week. ${isIdeal ? 'This is the ideal range (0.5–1.5 lbs/wk) for a lean cut — fast enough to see results, slow enough to keep muscle.' : parseFloat(lbsPerWeek) < 0.5 ? 'Slightly slower than ideal. Try adding 10 min of cardio or cutting 100 kcal from the target.' : 'Faster than ideal. Consider a refeed day to protect metabolic rate.'}`,
-    value: `${lbsPerWeek}/wk`,
-  });
-
-  // Steps insight
-  const highStepDays = stepLogs.filter(d => d.steps >= 10000).length;
-  const stepPct = Math.round((highStepDays / stepLogs.length) * 100);
-  insights.push({
-    icon: Target, accent: '#eab308', tag: 'Activity', trend: stepPct > 50 ? 'up' : 'down',
-    title: `${stepPct}% of days above 10k steps`,
-    body: `You hit the 10k step goal on ${highStepDays} of ${stepLogs.length} days. NEAT (non-exercise activity) is one of the most powerful levers in a cut. ${stepPct >= 70 ? 'Your NEAT is excellent — keep it up.' : 'Try parking further, taking stairs, or adding a 20-min walk to boost this.'}`,
-    value: `${highStepDays}/${stepLogs.length}`,
-  });
-
-  // Training frequency
-  const trainedDays = workouts.length;
-  insights.push({
-    icon: Star, accent: '#6366f1', tag: 'Training', trend: trainedDays >= 4 ? 'up' : 'neutral',
-    title: `${trainedDays} workouts logged`,
-    body: `You've logged ${trainedDays} sessions in the tracked period. ${trainedDays >= 4 ? 'Training frequency is on point — 4-5 sessions per week during a cut is the sweet spot for muscle retention.' : 'Aim for 4+ sessions per week. Frequency protects muscle and keeps metabolism elevated.'}`,
-    value: `${trainedDays}`,
-  });
-
-  // Adherence
-  const onPlanDays = dailyNotes.filter(d => d.onPlan).length;
-  const pctOnPlan = Math.round((onPlanDays / dailyNotes.length) * 100);
-  insights.push({
-    icon: Lightbulb, accent: '#a78bfa', tag: 'Adherence', trend: pctOnPlan >= 80 ? 'up' : 'down',
-    title: `${pctOnPlan}% on-plan adherence`,
-    body: `You stayed on plan ${onPlanDays} of ${dailyNotes.length} logged days. ${pctOnPlan >= 85 ? 'Exceptional discipline — this level of adherence will compound massively over 18 weeks.' : pctOnPlan >= 70 ? "Good consistency. Identify what causes off days and build a defense against it." : 'Adherence needs work. Progress is built in the plan, not around it.'}`,
-    value: `${pctOnPlan}%`,
-  });
-
-  return insights;
+function TrendArrow({ type }) {
+  if (type === 'positive') return <ArrowUp size={12} style={{ color: '#10b981' }} />;
+  if (type === 'warning')  return <ArrowDown size={12} style={{ color: '#ef4444' }} />;
+  return <Minus size={12} style={{ color: '#57534e' }} />;
 }
 
-const insights = computeInsights();
-const latest = weightLogs[weightLogs.length - 1];
-const totalLost = (profile.startWeight - latest.weight).toFixed(1);
-
 export default function Insights() {
+  const [store] = useApexStore();
+  const settings  = store.settings || {};
+  const weightLogs = store.weightLogs || [];
+  const workouts  = store.workouts || [];
+  const foodLogs  = store.foodLogs || {};
+
+  const insights = getInsightsList(store);
+  const trend    = detectWeightTrend(store);
+
+  const startWeight = settings.startWeight || weightLogs[0]?.weight || 0;
+  const currentWeight = weightLogs[weightLogs.length - 1]?.weight || startWeight;
+  const totalLost = Math.max(0, parseFloat((startWeight - currentWeight).toFixed(1)));
+
+  const foodDays = Object.values(foodLogs).filter(day => {
+    const entries = [...(day.breakfast || []), ...(day.lunch || []), ...(day.dinner || []), ...(day.snacks || [])];
+    return entries.length > 0;
+  }).length;
+
+  const hasData = weightLogs.length >= 2 || foodDays >= 2;
+
   return (
-    <div className="min-h-screen px-6 py-8 max-w-5xl" style={{ background: '#07060a' }}>
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-7">
-        <div className="flex items-center gap-2 mb-1">
-          <Lightbulb size={18} style={{ color: '#f59e0b' }} />
-          <h1 className="text-2xl font-black tracking-tight" style={{ color: '#f5f4f2' }}>Insights</h1>
-        </div>
-        <p className="text-sm" style={{ color: '#78716c' }}>
-          Data becomes wisdom. Here's what your numbers say.
-        </p>
-      </motion.div>
+    <div className="min-h-screen" style={{ background: '#07060a' }}>
+      {/* Cinematic hero */}
+      <div className="relative overflow-hidden" style={{ height: 260 }}>
+        <img
+          src="https://images.unsplash.com/photo-1551698618-1dfe5d97d256?auto=format&fit=crop&w=1400&q=60"
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{ objectPosition: 'center 40%' }}
+        />
+        <div className="absolute inset-0" style={{ background: 'rgba(8,6,4,0.78)' }} />
+        <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 30% 60%, rgba(245,158,11,0.07) 0%, transparent 60%)' }} />
+        <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 100% 100%, rgba(0,0,0,0.6) 0%, transparent 60%)' }} />
+        <div className="absolute bottom-0 left-0 right-0 h-24" style={{ background: 'linear-gradient(to top, #07060a, transparent)' }} />
 
-      {/* Summary bar */}
-      <GlassCard className="p-5 mb-6 flex flex-wrap gap-6" glow="amber" delay={0}>
-        {[
-          { label: 'Days tracked', value: weightLogs.length, color: '#f59e0b' },
-          { label: 'Lbs lost', value: totalLost, color: '#10b981' },
-          { label: 'Workouts', value: workouts.length, color: '#6366f1' },
-          { label: 'Macro days', value: macroLogs.length, color: '#f97316' },
-        ].map(s => (
-          <div key={s.label} className="flex items-center gap-3">
-            <div className="text-center">
-              <p className="text-2xl font-black" style={{ color: s.color }}>{s.value}</p>
-              <p className="text-xs" style={{ color: '#57534e' }}>{s.label}</p>
+        <div className="absolute inset-0 flex flex-col justify-end px-4 md:px-6 pb-6 md:pb-8">
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+            <div className="flex items-center gap-2 mb-2">
+              <Lightbulb size={14} style={{ color: '#f59e0b' }} />
+              <span className="text-xs font-bold uppercase tracking-widest" style={{ color: '#f59e0b', letterSpacing: '0.18em' }}>Insights</span>
             </div>
-          </div>
-        ))}
-        <div className="ml-auto flex items-center gap-2 text-xs" style={{ color: '#78716c' }}>
-          <Lightbulb size={13} style={{ color: '#f59e0b' }} />
-          Auto-generated from your data
+            <h1 className="font-black tracking-tight leading-none mb-2" style={{ fontSize: 'clamp(30px,7vw,46px)', color: '#f5f4f2' }}>
+              Your Data,<br />Decoded.
+            </h1>
+            <p className="text-sm" style={{ color: '#78716c' }}>
+              {hasData ? 'Patterns detected from your real logs.' : 'Log more data to unlock intelligent insights.'}
+            </p>
+          </motion.div>
         </div>
-      </GlassCard>
-
-      {/* Insights */}
-      <div className="space-y-3">
-        {insights.map((insight, i) => {
-          const Icon = insight.icon;
-          return (
-            <GlassCard key={i} className="p-5 flex gap-4" delay={0.1 + i * 0.07}>
-              {/* Icon */}
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ background: `${insight.accent}12`, border: `1px solid ${insight.accent}25` }}
-              >
-                <Icon size={16} style={{ color: insight.accent }} />
-              </div>
-
-              {/* Content */}
-              <div className="flex-1">
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="text-xs px-2 py-0.5 rounded-full font-medium"
-                      style={{ background: `${insight.accent}12`, color: insight.accent }}
-                    >
-                      {insight.tag}
-                    </span>
-                    {insight.trend === 'up' ? (
-                      <ArrowUp size={12} style={{ color: '#10b981' }} />
-                    ) : insight.trend === 'down' ? (
-                      <ArrowDown size={12} style={{ color: '#ef4444' }} />
-                    ) : null}
-                  </div>
-                  <span className="text-lg font-black" style={{ color: insight.accent }}>{insight.value}</span>
-                </div>
-                <h3 className="text-sm font-semibold mb-1" style={{ color: '#f5f4f2' }}>{insight.title}</h3>
-                <p className="text-sm leading-relaxed" style={{ color: '#78716c' }}>{insight.body}</p>
-              </div>
-            </GlassCard>
-          );
-        })}
       </div>
 
-      {/* Motivational footer */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.8 }}
-        className="mt-8 p-6 rounded-2xl text-center"
-        style={{ background: 'rgba(245,158,11,0.04)', border: '1px solid rgba(245,158,11,0.08)' }}
-      >
-        <p className="text-base font-semibold" style={{ color: '#f5f4f2' }}>
-          You've lost {totalLost} lbs. That's real. That's earned.
-        </p>
-        <p className="text-sm mt-1" style={{ color: '#78716c' }}>
-          Keep going. The data doesn't lie — you're doing the work.
-        </p>
-      </motion.div>
+      <div className="px-4 md:px-6 py-6 max-w-5xl pb-24 md:pb-10">
+        {/* Summary bar */}
+        <GlassCard className="p-5 mb-6" glow="amber" delay={0}>
+          <div className="flex flex-wrap gap-6 items-center">
+            {[
+              { label: 'Days tracked',  value: weightLogs.length, color: '#f59e0b' },
+              { label: 'Lbs lost',      value: totalLost || '—',  color: '#10b981' },
+              { label: 'Workouts',      value: workouts.length,   color: '#6366f1' },
+              { label: 'Food days',     value: foodDays,          color: '#f97316' },
+              ...(trend ? [{ label: 'Rate', value: trend.weeklyRateStr, color: trend.trend === 'declining' ? '#10b981' : trend.trend === 'rising' ? '#f97316' : '#78716c' }] : []),
+            ].map(s => (
+              <div key={s.label} className="text-center">
+                <p className="text-2xl font-black" style={{ color: s.color }}>{s.value}</p>
+                <p className="text-xs mt-0.5" style={{ color: '#57534e' }}>{s.label}</p>
+              </div>
+            ))}
+            <div className="ml-auto flex items-center gap-2 text-xs" style={{ color: '#3d3835' }}>
+              <Lightbulb size={13} style={{ color: '#f59e0b' }} />
+              Live from your data
+            </div>
+          </div>
+        </GlassCard>
+
+        {/* Insights list */}
+        {hasData && insights.length > 0 ? (
+          <div className="space-y-3">
+            {insights.map((insight, i) => {
+              const accent = TYPE_COLOR[insight.type] || '#78716c';
+              return (
+                <motion.div
+                  key={insight.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 + i * 0.07 }}
+                  className="rounded-2xl p-5 flex gap-4"
+                  style={{
+                    background: insight.type === 'positive'
+                      ? 'rgba(16,185,129,0.04)'
+                      : insight.type === 'warning'
+                        ? 'rgba(245,158,11,0.04)'
+                        : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${accent}20`,
+                  }}>
+                  {/* Emoji icon */}
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-xl"
+                    style={{ background: `${accent}12`, border: `1px solid ${accent}20` }}>
+                    {insight.icon}
+                  </div>
+
+                  {/* Content */}
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                          style={{ background: `${accent}15`, color: accent }}>
+                          {insight.tag}
+                        </span>
+                        <TrendArrow type={insight.type} />
+                      </div>
+                    </div>
+                    <h3 className="text-sm font-semibold mb-1" style={{ color: '#f5f4f2' }}>{insight.title}</h3>
+                    <p className="text-sm leading-relaxed" style={{ color: '#78716c' }}>{insight.text}</p>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        ) : (
+          /* Empty state */
+          <motion.div
+            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+            className="rounded-2xl p-10 text-center"
+            style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <p className="text-4xl mb-4">📊</p>
+            <p className="text-base font-semibold mb-2" style={{ color: '#f5f4f2' }}>No patterns yet</p>
+            <p className="text-sm" style={{ color: '#57534e' }}>
+              Log your weight for 5+ days and track a few meals — then come back here to see what your data reveals.
+            </p>
+          </motion.div>
+        )}
+
+        {/* Motivational footer */}
+        {totalLost > 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.7 }}
+            className="mt-8 p-6 rounded-2xl text-center"
+            style={{ background: 'rgba(245,158,11,0.04)', border: '1px solid rgba(245,158,11,0.08)' }}>
+            <p className="text-base font-semibold" style={{ color: '#f5f4f2' }}>
+              You've lost {totalLost} lbs. That's real. That's earned.
+            </p>
+            <p className="text-sm mt-1" style={{ color: '#78716c' }}>
+              The data doesn't lie — you're doing the work.
+            </p>
+          </motion.div>
+        )}
+      </div>
     </div>
   );
 }

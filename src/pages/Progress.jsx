@@ -63,34 +63,56 @@ export default function Progress() {
     <div style={{ minHeight: '100vh', background: '#111010' }}>
 
       {/* Hero */}
-      <div className="relative overflow-hidden" style={{ height: 220 }}>
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg, #0d1a10 0%, #111010 50%, #1a1208 100%)' }} />
-        <div className="absolute" style={{ top: -40, right: 80, width: 300, height: 300, background: 'radial-gradient(circle, rgba(16,185,129,0.15) 0%, transparent 65%)', filter: 'blur(40px)' }} />
-        <div className="absolute" style={{ bottom: -20, left: 80, width: 200, height: 200, background: 'radial-gradient(circle, rgba(245,158,11,0.1) 0%, transparent 65%)', filter: 'blur(30px)' }} />
+      <div className="relative overflow-hidden" style={{ height: 280 }}>
+        {/* Background */}
+        <div className="absolute inset-0" style={{
+          backgroundImage: 'url(https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=1400&q=60)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center 20%',
+        }} />
+        <div className="absolute inset-0" style={{ background: 'rgba(6,10,7,0.82)' }} />
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.1) 0%, transparent 60%)' }} />
+        <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse 100% 80% at 50% 50%, transparent 40%, rgba(0,0,0,0.55) 100%)' }} />
+        {/* Grain */}
+        <div className="absolute inset-0 pointer-events-none" style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+          opacity: 0.04,
+        }} />
+
         <div className="absolute inset-0 flex flex-col justify-center px-8">
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-            <div className="flex items-center gap-2 mb-2">
-              <Camera size={18} style={{ color: '#10b981' }} />
-              <p className="text-sm font-medium" style={{ color: '#4a7c5c' }}>Your visual record</p>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}>
+            <div className="flex items-center gap-2 mb-3">
+              <Camera size={16} style={{ color: '#10b981' }} />
+              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#4a7c5c', letterSpacing: '0.14em' }}>Your visual record</p>
             </div>
-            <h1 className="text-3xl font-bold tracking-tight mb-1" style={{ color: '#f5f4f2' }}>Progress Photos</h1>
+            <h1 className="font-black tracking-tight leading-none mb-3" style={{ fontSize: 46, color: '#f5f4f2' }}>Progress Photos</h1>
             <p className="text-sm" style={{ color: '#78716c' }}>Every photo tells your story. Document it all.</p>
           </motion.div>
         </div>
+
         {/* Stats */}
-        <div className="absolute right-8 top-1/2 -translate-y-1/2 flex gap-3">
+        <motion.div initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.2, duration: 0.5 }}
+          className="absolute right-8 top-1/2 -translate-y-1/2 flex gap-3">
           {[
             { label: 'Total lost', value: `−${totalLost} lbs`, color: '#10b981' },
             { label: 'Photos', value: photos.length, color: '#f59e0b' },
             { label: 'Current', value: `${latestWeight} lbs`, color: '#a8a29e' },
           ].map(s => (
-            <div key={s.label} className="text-center p-3 rounded-2xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(12px)', minWidth: 80 }}>
-              <p className="text-lg font-bold" style={{ color: s.color }}>{s.value}</p>
-              <p className="text-xs mt-0.5" style={{ color: '#57534e' }}>{s.label}</p>
+            <div key={s.label} className="text-center px-4 py-4 rounded-2xl" style={{
+              background: 'rgba(0,0,0,0.45)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              backdropFilter: 'blur(20px)',
+              minWidth: 80,
+            }}>
+              <p className="text-xl font-black" style={{ color: s.color }}>{s.value}</p>
+              <p className="text-[11px] mt-1 uppercase tracking-wider" style={{ color: '#57534e' }}>{s.label}</p>
             </div>
           ))}
-        </div>
-        <div className="absolute bottom-0 left-0 right-0 h-16" style={{ background: 'linear-gradient(to bottom, transparent, #111010)' }} />
+        </motion.div>
+
+        <div className="absolute bottom-0 left-0 right-0 h-24" style={{ background: 'linear-gradient(to bottom, transparent, #111010)' }} />
       </div>
 
       <div className="px-6 pb-10" style={{ marginTop: -8 }}>
