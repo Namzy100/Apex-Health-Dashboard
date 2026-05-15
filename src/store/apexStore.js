@@ -58,6 +58,24 @@ function defaultStore() {
     customFoods:   [],    // user-saved custom food items
     weeklyReviews: [],    // generated weekly review snapshots
     momentumLog:   {},    // { 'YYYY-MM-DD': { score, breakdown } }
+    // ── Travel ───────────────────────────────────────────────────────────────
+    travelPlans:   [],    // { id, destination, startDate, endDate, flights, hotels, packingList, itinerary, notes }
+    // ── Personalization ───────────────────────────────────────────────────────
+    dashboardPreferences: {
+      sectionOrder: ['today', 'momentum', 'habits', 'goals', 'nutrition', 'weight', 'coach', 'journal', 'calendar'],
+      hiddenSections: [],
+      compactMode: false,
+      heroStyle: 'gradient',  // 'gradient' | 'minimal' | 'cinematic'
+    },
+    // ── Onboarding ────────────────────────────────────────────────────────────
+    onboarding: {
+      completed: false,
+      completedAt: null,
+      focusAreas: [],     // e.g. ['fitness', 'fat_loss', 'habits']
+      scheduleStyle: '',  // 'structured' | 'flexible' | 'minimal'
+      trainingFrequency: 4,
+      routineStyle: '',   // 'early_bird' | 'night_owl' | 'flexible'
+    },
   };
 }
 
@@ -548,6 +566,53 @@ export function saveWeeklyReview(review) {
 
 export function getWeeklyReviews() {
   return getOrInitStore().weeklyReviews || [];
+}
+
+// ── Travel plans ──────────────────────────────────────────────────────────────
+
+export function getTravelPlans() {
+  return getOrInitStore().travelPlans || [];
+}
+
+export function saveTravelPlan(plan) {
+  const store = getOrInitStore();
+  const plans = store.travelPlans || [];
+  const id = plan.id || `trip-${Date.now()}`;
+  const item = { ...plan, id, updatedAt: new Date().toISOString() };
+  const idx = plans.findIndex(p => p.id === id);
+  const updated = idx >= 0 ? plans.map((p, i) => i === idx ? item : p) : [item, ...plans];
+  writeStore({ ...store, travelPlans: updated });
+  return item;
+}
+
+export function deleteTravelPlan(id) {
+  const store = getOrInitStore();
+  writeStore({ ...store, travelPlans: (store.travelPlans || []).filter(p => p.id !== id) });
+}
+
+// ── Dashboard preferences ─────────────────────────────────────────────────────
+
+export function getDashboardPreferences() {
+  return getOrInitStore().dashboardPreferences || {};
+}
+
+export function saveDashboardPreferences(prefs) {
+  const store = getOrInitStore();
+  writeStore({ ...store, dashboardPreferences: { ...(store.dashboardPreferences || {}), ...prefs } });
+}
+
+// ── Onboarding ────────────────────────────────────────────────────────────────
+
+export function getOnboarding() {
+  return getOrInitStore().onboarding || { completed: false };
+}
+
+export function completeOnboarding(data) {
+  const store = getOrInitStore();
+  writeStore({
+    ...store,
+    onboarding: { ...data, completed: true, completedAt: new Date().toISOString() },
+  });
 }
 
 // ── Export / Import ───────────────────────────────────────────────────────────

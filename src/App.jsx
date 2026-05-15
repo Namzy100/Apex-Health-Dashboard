@@ -6,7 +6,7 @@ import { ToastProvider } from './components/Toast';
 import Sidebar from './components/Sidebar';
 import MobileNav from './components/MobileNav';
 import { SyncProvider, useSyncContext } from './contexts/SyncContext';
-import { useApexStore } from './store/apexStore';
+import { useApexStore, getWeeklyReviews, saveWeeklyReview } from './store/apexStore';
 
 // ── PWA update banner ─────────────────────────────────────────────────────────
 
@@ -61,7 +61,9 @@ function StoreWatcher() {
 
 // ── Pages ─────────────────────────────────────────────────────────────────────
 
-import Dashboard from './pages/Dashboard';
+import Dashboard   from './pages/Dashboard';
+const Onboarding  = lazy(() => import('./pages/Onboarding'));
+const Travel      = lazy(() => import('./pages/Travel'));
 
 const FoodCalories  = lazy(() => import('./pages/FoodCalories'));
 const CookSomething = lazy(() => import('./pages/CookSomething'));
@@ -94,6 +96,55 @@ function PageSkeleton() {
   );
 }
 
+// ── Onboarding gate ───────────────────────────────────────────────────────────
+
+function AppInner() {
+  const [store, update] = useApexStore();
+  const needsOnboarding = !store.onboarding?.completed;
+
+  if (needsOnboarding) {
+    return (
+      <Suspense fallback={<PageSkeleton />}>
+        <Onboarding onComplete={() => update(s => ({ ...s, onboarding: { ...s.onboarding, completed: true } }))} />
+      </Suspense>
+    );
+  }
+
+  return (
+    <div className="flex" style={{ minHeight: '100svh', background: '#111010' }}>
+      <StoreWatcher />
+      <Sidebar />
+      <main className="flex-1 overflow-x-hidden md:ml-[220px]">
+        <Suspense fallback={<PageSkeleton />}>
+          <Routes>
+            <Route path="/"         element={<Dashboard />} />
+            <Route path="/food"     element={<FoodCalories />} />
+            <Route path="/cook"     element={<CookSomething />} />
+            <Route path="/weight"   element={<WeightTracker />} />
+            <Route path="/macros"   element={<MacroTracker />} />
+            <Route path="/activity" element={<Activity />} />
+            <Route path="/lifting"  element={<Lifting />} />
+            <Route path="/recipes"  element={<Recipes />} />
+            <Route path="/calendar" element={<Calendar />} />
+            <Route path="/progress" element={<Progress />} />
+            <Route path="/summer"   element={<SummerPlans />} />
+            <Route path="/insights" element={<Insights />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/import"   element={<Import />} />
+            <Route path="/today"    element={<Today />} />
+            <Route path="/habits"   element={<Habits />} />
+            <Route path="/goals"    element={<Goals />} />
+            <Route path="/journal"  element={<Journal />} />
+            <Route path="/travel"   element={<Travel />} />
+          </Routes>
+        </Suspense>
+      </main>
+      <MobileNav />
+      <PWAUpdater />
+    </div>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -101,36 +152,7 @@ export default function App() {
     <BrowserRouter>
       <SyncProvider>
         <ToastProvider>
-          <div className="flex" style={{ minHeight: '100svh', background: '#111010' }}>
-            <StoreWatcher />
-            <Sidebar />
-            <main className="flex-1 overflow-x-hidden md:ml-[220px]">
-              <Suspense fallback={<PageSkeleton />}>
-                <Routes>
-                  <Route path="/"         element={<Dashboard />} />
-                  <Route path="/food"     element={<FoodCalories />} />
-                  <Route path="/cook"     element={<CookSomething />} />
-                  <Route path="/weight"   element={<WeightTracker />} />
-                  <Route path="/macros"   element={<MacroTracker />} />
-                  <Route path="/activity" element={<Activity />} />
-                  <Route path="/lifting"  element={<Lifting />} />
-                  <Route path="/recipes"  element={<Recipes />} />
-                  <Route path="/calendar" element={<Calendar />} />
-                  <Route path="/progress" element={<Progress />} />
-                  <Route path="/summer"   element={<SummerPlans />} />
-                  <Route path="/insights" element={<Insights />} />
-                  <Route path="/settings" element={<Settings />} />
-                  <Route path="/import"   element={<Import />} />
-                  <Route path="/today"   element={<Today />} />
-                  <Route path="/habits"  element={<Habits />} />
-                  <Route path="/goals"   element={<Goals />} />
-                  <Route path="/journal" element={<Journal />} />
-                </Routes>
-              </Suspense>
-            </main>
-            <MobileNav />
-            <PWAUpdater />
-          </div>
+          <AppInner />
         </ToastProvider>
       </SyncProvider>
     </BrowserRouter>

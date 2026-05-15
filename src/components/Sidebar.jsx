@@ -5,7 +5,7 @@ import {
   BookOpen, Camera, Sun, Lightbulb, Settings, Flame,
   UtensilsCrossed, CalendarDays, ChefHat, Download,
   Cloud, CloudOff, Loader2,
-  Zap, CheckSquare, Target, NotebookPen,
+  Zap, CheckSquare, Target, NotebookPen, Plane,
 } from 'lucide-react';
 import { useApexStore, getDailyTotals } from '../store/apexStore';
 import { useSyncContext, SYNC_STATUS } from '../contexts/SyncContext';
@@ -46,6 +46,7 @@ const NAV_SECTIONS = [
   {
     label: 'MORE',
     links: [
+      { to: '/travel',   icon: Plane,       label: 'Travel Mode', badge: 'NEW' },
       { to: '/macros',   icon: Utensils,    label: 'Macros' },
       { to: '/recipes',  icon: BookOpen,    label: 'Recipes' },
       { to: '/calendar', icon: CalendarDays,label: 'Calendar' },

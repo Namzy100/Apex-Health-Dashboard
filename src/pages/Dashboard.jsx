@@ -30,6 +30,9 @@ import {
 import AICoachCard from '../components/AICoachCard';
 import DailyTimeline from '../components/DailyTimeline';
 import FocusMode from '../components/FocusMode';
+import MomentumRing from '../components/MomentumRing';
+import WeeklyReview from '../components/WeeklyReview';
+import { computeMomentum, scoreColor } from '../services/momentumEngine';
 
 const GAME_PLAN = [
   { id: 'workout', label: 'Complete workout', emoji: '🏋️' },
@@ -528,9 +531,10 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const todayStr = new Date().toISOString().slice(0, 10);
 
-  const [focusOpen,   setFocusOpen]   = useState(false);
-  const [activeSheet, setActiveSheet] = useState(null);
-  const [checkin,     setCheckin]     = useState(() => getDailyCheckin(todayStr));
+  const [focusOpen,        setFocusOpen]        = useState(false);
+  const [activeSheet,      setActiveSheet]      = useState(null);
+  const [showWeeklyReview, setShowWeeklyReview] = useState(false);
+  const [checkin,          setCheckin]          = useState(() => getDailyCheckin(todayStr));
   const gamePlan = checkin.gamePlan || {};
 
   const settings = store.settings || {};
@@ -581,6 +585,7 @@ export default function Dashboard() {
   const habitsData  = analyzeHabitsPatterns(store);
   const goalsData   = analyzeGoalsProgress(store);
   const journalData = analyzeJournal(store);
+  const momentum    = computeMomentum(store);
 
   const activeHabits  = (store.habits || []).filter(h => h.active !== false);
   const habitLogs     = store.habitLogs || {};
@@ -792,6 +797,51 @@ export default function Dashboard() {
               <span className="text-xs" style={{ color: '#ef4444' }}>{goalsData.nearestDays}d deadline</span>
             </button>
           )}
+        </motion.div>
+
+        {/* ── Momentum Card ── */}
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.36, duration: 0.35 }}
+          className="mb-5 rounded-2xl p-4 overflow-hidden relative"
+          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+          {/* Ambient glow behind score */}
+          <div className="absolute inset-0 pointer-events-none"
+            style={{ background: `radial-gradient(ellipse 60% 80% at 15% 50%, ${scoreColor(momentum.score)}10, transparent 70%)` }} />
+          <div className="relative flex items-center gap-4">
+            <MomentumRing score={momentum.score} label="momentum" size="sm" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-0.5">
+                <p className="text-sm font-bold" style={{ color: '#f5f4f2' }}>{momentum.label}</p>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+                  style={{ background: `${scoreColor(momentum.score)}18`, color: scoreColor(momentum.score), border: `1px solid ${scoreColor(momentum.score)}30` }}>
+                  {momentum.score}/100
+                </span>
+              </div>
+              <p className="text-xs mb-2" style={{ color: '#57534e' }}>{momentum.trendLabel}</p>
+              <div className="flex gap-1.5 flex-wrap">
+                {momentum.weakAreas.length > 0 && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>
+                    ↓ {momentum.weakAreas[0]}
+                  </span>
+                )}
+                {momentum.strongAreas.length > 0 && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981' }}>
+                    ↑ {momentum.strongAreas[0]}
+                  </span>
+                )}
+                {momentum.recommendations[0] && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(245,158,11,0.08)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.15)' }}>
+                    💡 {momentum.recommendations[0]}
+                  </span>
+                )}
+              </div>
+            </div>
+            <motion.button onClick={() => setShowWeeklyReview(true)} whileTap={{ scale: 0.93 }}
+              className="flex-shrink-0 px-3 py-2 rounded-xl text-xs font-semibold"
+              style={{ background: 'rgba(255,255,255,0.06)', color: '#78716c', border: '1px solid rgba(255,255,255,0.08)' }}>
+              Review
+            </motion.button>
+          </div>
         </motion.div>
 
         {/* ── Body grid ── */}
@@ -1286,6 +1336,13 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* ── Weekly Review Modal ── */}
+      <AnimatePresence>
+        {showWeeklyReview && (
+          <WeeklyReview store={store} onClose={() => setShowWeeklyReview(false)} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
