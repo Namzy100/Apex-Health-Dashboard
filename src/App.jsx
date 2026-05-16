@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ToastProvider } from './components/Toast';
 import Sidebar from './components/Sidebar';
 import MobileNav from './components/MobileNav';
+import QuickCalorieEntry from './components/QuickCalorieEntry';
 import { SyncProvider, useSyncContext } from './contexts/SyncContext';
 import { useApexStore, getWeeklyReviews, saveWeeklyReview } from './store/apexStore';
 
@@ -140,6 +141,7 @@ function AppInner() {
         </Suspense>
       </main>
       <MobileNav />
+      <QuickCalorieEntry />
       <PWAUpdater />
     </div>
   );

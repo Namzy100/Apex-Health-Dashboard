@@ -42,14 +42,29 @@ export const SOURCE_META = {
  * @param {function} opts.onProgress    — called as each source resolves
  * @returns {Promise<object[]>}         — deduplicated, sorted results
  */
+// Fuzzy match — returns true if query chars appear in order in target (simple typo tolerance)
+function fuzzyMatch(target, query) {
+  const t = target.toLowerCase();
+  const q = query.toLowerCase();
+  if (t.includes(q)) return true;
+  // Allow 1 char off for strings > 4 chars
+  if (q.length > 4) {
+    for (let i = 0; i < q.length; i++) {
+      const variant = q.slice(0, i) + q.slice(i + 1);
+      if (t.includes(variant)) return true;
+    }
+  }
+  return false;
+}
+
 export async function searchAllFoods(query, opts = {}) {
-  const { savedMeals = [], recentFoods = [], remote = true, onProgress = () => {} } = opts;
+  const { savedMeals = [], recentFoods = [], customFoods = [], remote = true, onProgress = () => {} } = opts;
   const q = query.toLowerCase().trim();
   if (!q) return [];
 
   // ── Phase 1: instant local results ──────────────────────────────────────────
   const savedMatches = savedMeals
-    .filter(m => m.name.toLowerCase().includes(q))
+    .filter(m => fuzzyMatch(m.name, q))
     .map(m => ({
       id: `saved-meal-${m.id}`,
       name: m.name,
@@ -64,12 +79,17 @@ export async function searchAllFoods(query, opts = {}) {
     }));
 
   const recentMatches = recentFoods
-    .filter(f => (f.name || '').toLowerCase().includes(q))
+    .filter(f => fuzzyMatch(f.name || '', q))
     .map(f => ({ ...f, source: f.source || 'recent', _isRecent: true }));
+
+  // Custom foods — user-saved entries, highest priority after recents
+  const customMatches = customFoods
+    .filter(f => fuzzyMatch(f.name || '', q))
+    .map(f => ({ ...f, source: 'custom' }));
 
   const localMatches = searchLocalFoods(query, 15);
 
-  const instantResults = dedup([...savedMatches, ...recentMatches, ...localMatches]);
+  const instantResults = dedup([...savedMatches, ...recentMatches, ...customMatches, ...localMatches]);
   onProgress({ phase: 'local', done: false, count: instantResults.length });
 
   if (DEV) {

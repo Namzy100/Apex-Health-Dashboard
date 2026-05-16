@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard, Scale, Utensils, Footprints, Dumbbell,
@@ -8,6 +8,7 @@ import {
   Zap, CheckSquare, Target, NotebookPen, Plane,
 } from 'lucide-react';
 import { useApexStore, getDailyTotals } from '../store/apexStore';
+import { ApexIconBox } from './ApexLogo';
 import { useSyncContext, SYNC_STATUS } from '../contexts/SyncContext';
 
 // Nav sections with optional group labels
@@ -158,14 +159,14 @@ export default function Sidebar() {
 
       {/* Logo */}
       <div className="relative px-5 pt-6 pb-5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center text-sm font-black text-black flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg, #f59e0b, #f97316)' }}>A</div>
+        <Link to="/" className="flex items-center gap-3 group" style={{ textDecoration: 'none' }}>
+          <ApexIconBox size={36} />
           <div>
-            <p className="font-bold text-sm leading-none" style={{ color: '#f5f4f2' }}>Apex</p>
+            <p className="font-bold text-sm leading-none transition-colors"
+              style={{ color: '#f5f4f2', letterSpacing: '0.05em' }}>APEX</p>
             <p className="text-xs mt-0.5" style={{ color: '#57534e' }}>Personal OS</p>
           </div>
-        </div>
+        </Link>
       </div>
 
       {/* Nav */}

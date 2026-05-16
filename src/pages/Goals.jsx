@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, X, Trash2, Pencil, CheckCircle2, Circle, Target, ChevronRight } from 'lucide-react';
+import { Plus, X, Trash2, Pencil, CheckCircle2, Circle, Target, ChevronRight, Sparkles, Clock } from 'lucide-react';
 import { useApexStore } from '../store/apexStore';
 import { useToast } from '../components/Toast';
 
@@ -16,6 +16,186 @@ const CATEGORIES = [
 
 function getCatInfo(id) {
   return CATEGORIES.find(c => c.id === id) || { label: id, emoji: '🎯', color: '#78716c' };
+}
+
+// ── Goal templates ────────────────────────────────────────────────────────────
+
+const GOAL_TEMPLATES = [
+  {
+    title: 'Lose 10 lbs',
+    description: 'Hit a daily calorie deficit and track weight weekly',
+    category: 'fitness', emoji: '⚖️',
+    targetWeeks: 12,
+  },
+  {
+    title: 'Build visible muscle',
+    description: 'Train 4× per week and hit protein targets daily',
+    category: 'fitness', emoji: '💪',
+    targetWeeks: 16,
+  },
+  {
+    title: 'Run a 5K',
+    description: 'Train 3× per week, building up distance each week',
+    category: 'fitness', emoji: '🏃',
+    targetWeeks: 8,
+  },
+  {
+    title: 'Read 12 books',
+    description: 'One book per month — 30 mins of reading daily',
+    category: 'growth', emoji: '📚',
+    targetWeeks: 52,
+  },
+  {
+    title: 'Save $10,000',
+    description: 'Automate monthly transfers and cut discretionary spend',
+    category: 'financial', emoji: '💰',
+    targetWeeks: 26,
+  },
+  {
+    title: 'Get a promotion',
+    description: 'Lead a key project, build visibility with leadership',
+    category: 'career', emoji: '🚀',
+    targetWeeks: 24,
+  },
+  {
+    title: 'Morning routine',
+    description: 'Wake up at 6am, journal, workout — every weekday',
+    category: 'personal', emoji: '🌅',
+    targetWeeks: 8,
+  },
+  {
+    title: 'Travel to Japan',
+    description: 'Plan and book the trip, budget ¥200k',
+    category: 'travel', emoji: '✈️',
+    targetWeeks: 20,
+  },
+  {
+    title: 'Meditate daily',
+    description: '10 minutes of mindfulness every morning',
+    category: 'personal', emoji: '🧘',
+    targetWeeks: 8,
+  },
+  {
+    title: 'Quit sugar for 30 days',
+    description: 'No added sugar — build the habit from scratch',
+    category: 'fitness', emoji: '🚫',
+    targetWeeks: 4,
+  },
+  {
+    title: 'Launch side project',
+    description: 'Ship an MVP, get first 10 users',
+    category: 'career', emoji: '🛠️',
+    targetWeeks: 12,
+  },
+  {
+    title: 'Cold shower streak',
+    description: '30 consecutive days of cold showers',
+    category: 'personal', emoji: '🧊',
+    targetWeeks: 5,
+  },
+];
+
+function weeksFromNow(weeks) {
+  const d = new Date();
+  d.setDate(d.getDate() + weeks * 7);
+  return d.toISOString().slice(0, 10);
+}
+
+// ── TemplatesModal ────────────────────────────────────────────────────────────
+
+function TemplatesModal({ onSelect, onClose }) {
+  const [search, setSearch] = useState('');
+  const [catFilter, setCatFilter] = useState('all');
+
+  const filtered = GOAL_TEMPLATES.filter(t => {
+    const matchCat = catFilter === 'all' || t.category === catFilter;
+    const matchSearch = !search || t.title.toLowerCase().includes(search.toLowerCase());
+    return matchCat && matchSearch;
+  });
+
+  return (
+    <motion.div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-4"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)' }}
+        onClick={onClose} />
+      <motion.div className="relative w-full max-w-md rounded-3xl flex flex-col"
+        style={{ background: '#1c1a18', border: '1px solid rgba(255,255,255,0.1)', maxHeight: '80vh' }}
+        initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-4"
+          style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="flex items-center gap-2">
+            <Sparkles size={16} style={{ color: '#f59e0b' }} />
+            <h3 className="font-bold text-base" style={{ color: '#f5f4f2' }}>Goal Templates</h3>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center"
+            style={{ background: 'rgba(255,255,255,0.08)' }}>
+            <X size={14} style={{ color: '#78716c' }} />
+          </button>
+        </div>
+
+        {/* Search */}
+        <div className="px-5 pt-3 pb-2">
+          <input
+            value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search templates..."
+            className="w-full px-3.5 py-2 rounded-xl text-sm outline-none"
+            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#f5f4f2' }}
+          />
+        </div>
+
+        {/* Category chips */}
+        <div className="flex gap-1.5 px-5 pb-3 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+          {[{ id: 'all', label: 'All', emoji: '⚡' }, ...CATEGORIES].map(c => (
+            <button key={c.id} onClick={() => setCatFilter(c.id)}
+              className="px-2.5 py-1 rounded-full text-[10px] whitespace-nowrap flex-shrink-0 transition-all"
+              style={{
+                background: catFilter === c.id ? 'rgba(245,158,11,0.2)' : 'rgba(255,255,255,0.05)',
+                color: catFilter === c.id ? '#f59e0b' : '#78716c',
+                border: catFilter === c.id ? '1px solid rgba(245,158,11,0.3)' : '1px solid rgba(255,255,255,0.07)',
+              }}>
+              {c.emoji} {c.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Template list */}
+        <div className="overflow-y-auto px-5 pb-5 space-y-2">
+          {filtered.map((t, i) => {
+            const cat = getCatInfo(t.category);
+            return (
+              <motion.button
+                key={i}
+                onClick={() => onSelect(t)}
+                className="w-full text-left rounded-2xl p-4 transition-all hover:scale-[1.01] active:scale-[0.99]"
+                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}
+              >
+                <div className="flex items-start gap-3">
+                  <span className="text-xl leading-none mt-0.5 flex-shrink-0">{t.emoji}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold leading-tight" style={{ color: '#f5f4f2' }}>{t.title}</p>
+                    <p className="text-xs mt-0.5 leading-snug" style={{ color: '#57534e' }}>{t.description}</p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className="text-[10px] px-2 py-0.5 rounded-full"
+                        style={{ background: `${cat.color}18`, color: cat.color }}>
+                        {cat.emoji} {cat.label}
+                      </span>
+                      <span className="flex items-center gap-1 text-[10px]" style={{ color: '#3d3a36' }}>
+                        <Clock size={9} />
+                        ~{t.targetWeeks} weeks
+                      </span>
+                    </div>
+                  </div>
+                  <ChevronRight size={14} style={{ color: '#3d3a36' }} className="mt-1 flex-shrink-0" />
+                </div>
+              </motion.button>
+            );
+          })}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
 }
 
 function daysUntil(dateStr) {
@@ -108,11 +288,11 @@ function GoalCard({ goal, onEdit, onDelete, onToggle, onProgressChange }) {
 
 // ── AddEditModal ─────────────────────────────────────────────────────────────
 
-function AddEditModal({ goal, onSave, onClose }) {
-  const [title,       setTitle]       = useState(goal?.title || '');
-  const [description, setDescription] = useState(goal?.description || '');
-  const [category,    setCategory]    = useState(goal?.category || 'fitness');
-  const [targetDate,  setTargetDate]  = useState(goal?.targetDate || '');
+function AddEditModal({ goal, prefill, onSave, onClose }) {
+  const [title,       setTitle]       = useState(goal?.title || prefill?.title || '');
+  const [description, setDescription] = useState(goal?.description || prefill?.description || '');
+  const [category,    setCategory]    = useState(goal?.category || prefill?.category || 'fitness');
+  const [targetDate,  setTargetDate]  = useState(goal?.targetDate || (prefill?.targetWeeks ? weeksFromNow(prefill.targetWeeks) : ''));
   const [progress,    setProgress]    = useState(goal?.progress ?? 0);
 
   const isValid = title.trim().length > 0;
@@ -204,9 +384,11 @@ function AddEditModal({ goal, onSave, onClose }) {
 export default function Goals() {
   const [store, update] = useApexStore();
   const toast = useToast();
-  const [showModal, setShowModal]     = useState(false);
-  const [editingGoal, setEditingGoal] = useState(null);
-  const [filter, setFilter]           = useState('all');
+  const [showModal, setShowModal]         = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [editingGoal, setEditingGoal]     = useState(null);
+  const [prefillData, setPrefillData]     = useState(null);
+  const [filter, setFilter]               = useState('all');
 
   const goals = store.goals || [];
 
@@ -260,7 +442,14 @@ export default function Goals() {
     }));
   }
 
-  function handleEdit(goal) { setEditingGoal(goal); setShowModal(true); }
+  function handleEdit(goal) { setEditingGoal(goal); setPrefillData(null); setShowModal(true); }
+
+  function handleTemplateSelect(template) {
+    setShowTemplates(false);
+    setEditingGoal(null);
+    setPrefillData(template);
+    setShowModal(true);
+  }
 
   return (
     <div className="min-h-screen px-4 md:px-6 py-8 pb-28 md:pb-10 max-w-2xl mx-auto" style={{ background: '#111010' }}>
@@ -271,12 +460,21 @@ export default function Goals() {
           <h1 className="text-2xl font-bold tracking-tight" style={{ color: '#f5f4f2' }}>Goals</h1>
           <p className="text-sm mt-0.5" style={{ color: '#57534e' }}>Long-term targets that define your trajectory</p>
         </div>
-        <motion.button whileTap={{ scale: 0.9 }}
-          onClick={() => { setEditingGoal(null); setShowModal(true); }}
-          className="w-9 h-9 rounded-xl flex items-center justify-center"
-          style={{ background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.25)' }}>
-          <Plus size={18} style={{ color: '#a78bfa' }} />
-        </motion.button>
+        <div className="flex items-center gap-2">
+          <motion.button whileTap={{ scale: 0.9 }}
+            onClick={() => setShowTemplates(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium"
+            style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', color: '#f59e0b' }}>
+            <Sparkles size={12} />
+            Templates
+          </motion.button>
+          <motion.button whileTap={{ scale: 0.9 }}
+            onClick={() => { setEditingGoal(null); setPrefillData(null); setShowModal(true); }}
+            className="w-9 h-9 rounded-xl flex items-center justify-center"
+            style={{ background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.25)' }}>
+            <Plus size={18} style={{ color: '#a78bfa' }} />
+          </motion.button>
+        </div>
       </div>
 
       {/* Overview card */}
@@ -347,11 +545,19 @@ export default function Goals() {
           <p style={{ fontSize: 40 }}>🎯</p>
           <p className="mt-3 text-sm" style={{ color: '#57534e' }}>No goals yet</p>
           <p className="text-xs mt-1" style={{ color: '#3d3a36' }}>Define what you're working toward</p>
-          <motion.button whileTap={{ scale: 0.95 }} onClick={() => setShowModal(true)}
-            className="mt-4 px-5 py-2 rounded-xl text-sm font-medium"
-            style={{ background: 'rgba(167,139,250,0.1)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.2)' }}>
-            Add goal
-          </motion.button>
+          <div className="flex items-center justify-center gap-2 mt-4">
+            <motion.button whileTap={{ scale: 0.95 }} onClick={() => setShowTemplates(true)}
+              className="px-5 py-2 rounded-xl text-sm font-medium flex items-center gap-1.5"
+              style={{ background: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.2)' }}>
+              <Sparkles size={13} />
+              Browse templates
+            </motion.button>
+            <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setPrefillData(null); setShowModal(true); }}
+              className="px-5 py-2 rounded-xl text-sm font-medium"
+              style={{ background: 'rgba(167,139,250,0.1)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.2)' }}>
+              Custom goal
+            </motion.button>
+          </div>
         </div>
       ) : (
         <div className="text-center py-8">
@@ -376,9 +582,18 @@ export default function Goals() {
       )}
 
       <AnimatePresence>
+        {showTemplates && (
+          <TemplatesModal
+            onSelect={handleTemplateSelect}
+            onClose={() => setShowTemplates(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {showModal && (
-          <AddEditModal habit={editingGoal} goal={editingGoal} onSave={handleSave}
-            onClose={() => { setShowModal(false); setEditingGoal(null); }} />
+          <AddEditModal goal={editingGoal} prefill={prefillData} onSave={handleSave}
+            onClose={() => { setShowModal(false); setEditingGoal(null); setPrefillData(null); }} />
         )}
       </AnimatePresence>
     </div>

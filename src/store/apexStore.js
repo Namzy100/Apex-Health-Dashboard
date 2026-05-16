@@ -3,7 +3,7 @@
  * Single localStorage key: "apex.data"
  * Provides useApexStore() hook + helpers for all CRUD operations.
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { weightLogs as sampleWeights, macroLogs as sampleMacros, workouts as sampleWorkouts, prs } from '../data/sampleData';
 
 const KEY = 'apex.data';
@@ -212,15 +212,31 @@ export function getOrInitStore() {
   return defaults;
 }
 
+// ── Global store subscribers (so all useApexStore() instances stay in sync) ───
+
+const _listeners = new Set();
+
+function _notifyAll(next) {
+  _listeners.forEach(fn => fn(next));
+}
+
 // ── React hook ────────────────────────────────────────────────────────────────
 
 export function useApexStore() {
   const [store, setStore] = useState(getOrInitStore);
 
+  // Register this component as a listener so it receives updates from others
+  useEffect(() => {
+    _listeners.add(setStore);
+    return () => { _listeners.delete(setStore); };
+  }, []);
+
   const update = useCallback((updater) => {
     setStore(prev => {
       const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater };
       writeStore(next);
+      // Broadcast to all other mounted instances
+      _listeners.forEach(fn => { if (fn !== setStore) fn(next); });
       return next;
     });
   }, []);

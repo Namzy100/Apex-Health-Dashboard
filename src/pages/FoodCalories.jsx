@@ -573,15 +573,17 @@ export default function FoodCalories() {
     setSearchPhase('searching');
     const savedMeals  = getSavedMeals();
     const recentFoods = getRecentFoods();
+    const customFoods = getCustomFoods();
 
     await searchAllFoods(q, {
       savedMeals,
       recentFoods,
+      customFoods,
       remote: true,
       onProgress: ({ phase, done, count }) => {
         if (phase === 'local') {
           // Instant local results — show immediately
-          searchAllFoods(q, { savedMeals, recentFoods, remote: false, onProgress: () => {} })
+          searchAllFoods(q, { savedMeals, recentFoods, customFoods, remote: false, onProgress: () => {} })
             .then(localOnly => setResults(localOnly));
         }
         if (done) {
