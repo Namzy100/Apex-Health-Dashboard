@@ -1,4 +1,5 @@
 import type { ApexContext } from "./context-builder";
+import { deriveRisk, deriveTodaysMove } from "./operating-mode";
 
 // ─── Core system prompt ───────────────────────────────────────────────────────
 
@@ -101,7 +102,9 @@ Return a JSON object with exactly these fields:
     "schedule anchor — e.g. 'First meeting: 2:00 PM' or 'Clear day — protect the morning'",
     "body anchor — e.g. 'Current: 178.2 lbs · down 0.6 this week' or 'Log weight this morning'"
   ],
-  "chips": ["3 chips — the most urgent questions for this specific person right now, based on patterns"]
+  "chips": ["3 chips — the most urgent questions for this specific person right now, based on patterns"],
+  "risk": "One sentence. The single biggest risk to today's performance or goal trajectory.",
+  "todaysMove": "One decisive sentence. The one action that matters most today."
 }
 
 Rules:
@@ -207,6 +210,8 @@ export function getMockBrief(ctx: ApexContext): {
   brief: string;
   anchors: [string, string, string];
   chips: string[];
+  risk: string;
+  todaysMove: string;
 } {
   const calLeft = ctx.user.calorieTarget - ctx.today.caloriesEaten;
   const protLeft = Math.round(ctx.user.proteinTarget - ctx.today.proteinEaten);
@@ -220,6 +225,9 @@ export function getMockBrief(ctx: ApexContext): {
   let brief: string;
 
   // ── Pattern-led brief: behavioral observation always leads when data exists ─
+  const risk = deriveRisk(ctx);
+  const todaysMove = deriveTodaysMove(ctx);
+
   if (topPattern && ctx.behavioral.daysOfData >= 3) {
     brief = buildPatternLedBrief(topPattern, ctx, calLeft);
   } else if (ctx.today.caloriesEaten === 0) {
@@ -252,7 +260,7 @@ export function getMockBrief(ctx: ApexContext): {
       ? ["What should I eat next?", "How do I hit my protein?", "Should I work out today?"]
       : ["Am I going to hit my goal?", "Should I work out today?", "What should I work on first?"];
 
-  return { brief, anchors: [calAnchor, schedAnchor, bodyAnchor], chips };
+  return { brief, anchors: [calAnchor, schedAnchor, bodyAnchor], chips, risk, todaysMove };
 }
 
 // ─── Mock chat responses ──────────────────────────────────────────────────────

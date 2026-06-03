@@ -12,6 +12,8 @@ interface BriefResult {
   brief: string;
   anchors: [string, string, string];
   chips: string[];
+  risk?: string;
+  todaysMove?: string;
 }
 
 // ─── Structured validation ────────────────────────────────────────────────────

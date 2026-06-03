@@ -62,6 +62,8 @@ export interface ApexState {
     anchors: [string, string, string];
     chips: string[];
     generatedAt: string | null;
+    risk?: string;
+    todaysMove?: string;
   };
   messages: Array<{ role: "user" | "assistant"; content: string; id: string }>;
   logSheetOpen: boolean;
@@ -95,6 +97,8 @@ const MOCK_BRIEF = {
   ] as [string, string, string],
   chips: ["What should I eat?", "Plan my morning", "Am I on track?"],
   generatedAt: new Date().toISOString(),
+  risk: "Under-eating is collapsing your afternoon energy. The deficit will hit before 3 PM.",
+  todaysMove: "Eat a real breakfast before you open the laptop.",
 };
 
 function makeInitialState(): ApexState {
