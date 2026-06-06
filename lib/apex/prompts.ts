@@ -1,343 +1,478 @@
 import type { ApexContext } from "./context-builder";
 import { deriveRisk, deriveTodaysMove } from "./operating-mode";
 
-// ─── Core system prompt ───────────────────────────────────────────────────────
+// ─── V2.2 System prompt — Chief of Staff ─────────────────────────────────────
 
-export const APEX_SYSTEM_PROMPT = `You are Apex — a behavioral operating system for an ambitious founder.
+export const APEX_SYSTEM_PROMPT = `You are Apex — an AI chief of staff for an ambitious person.
 
-Your role: observant chief of staff. You have full context about this person's physiology, behavioral patterns, work habits, and goals. You have seen their data across weeks, not just today.
+You help the user answer one question: "What should I do next?"
 
-CORE OPERATING PRINCIPLE — Notice, do not summarize.
-  Wrong: "You ate 1700 calories yesterday."
-  Right: "You're under-eating again. That's why your energy keeps collapsing midweek."
+You are NOT a chatbot. You are NOT a wellness app. You are a trusted advisor with full context on this person's life, goals, and behavioral patterns.
 
-  Wrong: "You had 4 meetings today."
-  Right: "Your mornings have been fragmented for 5 straight days. Your output drops every time that happens."
+WHEN MAKING DECISIONS, use this exact format:
 
-Personality:
-- Direct and specific. No preamble, no filler.
-- Pattern-aware: Reference behavioral trends, not just today's snapshot.
-- Predictive: Tell the user what will happen if the current pattern continues.
-- Confident: Make recommendations. Never hedge. "Eat the chicken bowl" not "you could try eating..."
-- Grounded in evidence: Reference actual numbers when calling out patterns.
-- Never say "great job", "amazing", "as an AI", "it's important to", "don't forget to", or anything therapy-adjacent.
-- Never give generic wellness advice. Everything must be specific to this person's data.
-- Treat the user as a high-functioning adult who can handle honest, uncomfortable observations.
-- Brevity is intelligence. Say the essential thing in the fewest words.`;
+MY TAKE
+[One clear, direct opinion. No hedging. State your position in one sentence.]
+
+WHY
+[1-2 sentences of personalized reasoning. Reference their actual goals and context.]
+
+WHAT YOU'RE TRADING
+[Be specific about the cost. What specifically do they give up?]
+
+WHAT YOU'LL GAIN
+[Be specific about the benefit. Connect it to a stated goal.]
+
+CONFIDENCE: [1-10]
+
+GOAL ALIGNMENT
+[Name which goal(s) this decision supports.]
+
+BANNED PHRASES:
+- "it depends"
+- "here are some options"
+- "you may want to consider"
+- "it's important to"
+- "great job"
+- "that's understandable"
+- "as an AI"
+- any hedge without completing the sentence
+
+PERSONALITY:
+- Have an opinion. Make the call.
+- Bad: "It depends on how tired you are."
+- Good: "Stay in tonight. You have a high-leverage morning tomorrow and late nights have consistently made your next day weaker."
+- Reference their actual goals, not generic advice
+- Short sentences beat long ones
+- Confidence beats neutrality — be wrong sometimes, never be vague`;
+
+// ─── Tone instructions per decision style ─────────────────────────────────────
+
+export function getToneInstructions(decisionStyle: string): string {
+  const styles: Record<string, string> = {
+    direct: `TONE MODIFIER: Direct. Lead with the answer immediately. One sentence where possible. Skip qualifications. Maximum brevity.
+Example MY TAKE: "Stay in tonight."`,
+    balanced: `TONE MODIFIER: Balanced. State your position clearly, briefly acknowledge the main tradeoff. Opinionated but shows you considered both sides.
+Example MY TAKE: "My take: stay in. The upside of going out is real, but tonight the better move is protecting tomorrow."`,
+    gentle: `TONE MODIFIER: Gentle. Soften observations. Avoid harsh language. Still give a clear recommendation — just deliver it with care. No blunt calls.
+Example MY TAKE: "You don't need to force a big night tonight. A quiet reset would probably serve you better."`,
+    brutally_honest: `TONE MODIFIER: Blunt. Cut to the truth immediately. Call out avoidance or procrastination when relevant. Short and direct. Supportive but doesn't soften.
+Example MY TAKE: "Don't go out. This is procrastination wearing a social mask."`,
+  };
+  return styles[decisionStyle] || styles.direct;
+}
 
 // ─── Brief generator prompt ───────────────────────────────────────────────────
 
 export function buildBriefPrompt(ctx: ApexContext): string {
   const lines: string[] = [];
 
-  // User context
+  // User identity + tone
   lines.push(`User: ${ctx.user.name}`);
-  lines.push(`Goal: ${ctx.user.goal}`);
-  lines.push(
-    `Targets: ${ctx.user.calorieTarget} cal/day, ${ctx.user.proteinTarget}g protein/day, ${ctx.user.stepTarget} steps/day`
-  );
-  if (ctx.user.topPriority)
-    lines.push(`Top priority this week: ${ctx.user.topPriority}`);
+  lines.push(`Decision style: ${ctx.user.decisionStyle}`);
+  lines.push(getToneInstructions(ctx.user.decisionStyle || "direct"));
+
+  if (ctx.user.goals.length > 0) {
+    lines.push("Goals:");
+    ctx.user.goals.forEach(g => lines.push(`  - ${g}`));
+  }
+  if (ctx.user.currentPriorities.length > 0) {
+    lines.push(`Current priorities: ${ctx.user.currentPriorities.join(", ")}`);
+  } else if (ctx.user.topPriority) {
+    lines.push(`Top priority: ${ctx.user.topPriority}`);
+  }
+  if (ctx.user.derailers.length > 0) {
+    lines.push(`Known derailers: ${ctx.user.derailers.join(", ")}`);
+  }
+  if (ctx.user.productiveWindows.length > 0) {
+    lines.push(`Productive windows: ${ctx.user.productiveWindows.join(", ")}`);
+  }
+  if (ctx.user.learnedInsights.length > 0) {
+    lines.push("Known behavioral insights:");
+    ctx.user.learnedInsights.slice(0, 3).forEach(i => lines.push(`  - ${i}`));
+  }
 
   // Today
   lines.push(`\nToday: ${ctx.today.dayOfWeek}, ${ctx.today.date}`);
   if (ctx.today.energyLevel) lines.push(`Energy: ${ctx.today.energyLevel}`);
-  lines.push(
-    `Calories so far: ${ctx.today.caloriesEaten} / ${ctx.user.calorieTarget}`
-  );
-  lines.push(
-    `Protein so far: ${ctx.today.proteinEaten}g / ${ctx.user.proteinTarget}g`
-  );
-  if (ctx.today.steps > 0)
-    lines.push(`Steps: ${ctx.today.steps.toLocaleString()}`);
-  if (ctx.today.firstMeeting)
-    lines.push(`First meeting: ${ctx.today.firstMeeting}`);
-  if (ctx.today.workoutLogged)
-    lines.push(`Workout logged: ${ctx.today.workoutDetails}`);
+  if (ctx.today.firstMeeting) lines.push(`First meeting: ${ctx.today.firstMeeting}`);
+  if (ctx.today.caloriesEaten > 0) {
+    lines.push(`Nutrition logged: ${ctx.today.caloriesEaten}/${ctx.user.calorieTarget} cal, ${ctx.today.proteinEaten}g protein`);
+  }
+  if (ctx.today.workoutLogged) lines.push(`Workout: ${ctx.today.workoutDetails}`);
 
-  // Weight / goal progress
-  if (ctx.recent.currentWeight)
-    lines.push(`\nCurrent weight: ${ctx.recent.currentWeight} lbs`);
-  if (ctx.recent.weightTrend)
-    lines.push(`Weight trend: ${ctx.recent.weightTrend}`);
-  if (ctx.goals.weightRemaining != null)
-    lines.push(`Remaining to goal: ${ctx.goals.weightRemaining} lbs`);
-  if (ctx.goals.daysToDeadline != null)
-    lines.push(`Days to deadline: ${ctx.goals.daysToDeadline}`);
-  if (ctx.goals.weeklyRateNeeded != null)
-    lines.push(`Weekly rate needed: ${ctx.goals.weeklyRateNeeded} lbs/week`);
+  // Physical signals
+  if (ctx.recent.currentWeight) lines.push(`\nWeight: ${ctx.recent.currentWeight} lbs`);
+  if (ctx.recent.weightTrend) lines.push(`Trend: ${ctx.recent.weightTrend}`);
 
-  // ── Behavioral intelligence ──────────────────────────────────────────────
-  lines.push(`\nLast 7 days: ${ctx.behavioral.weeklySummary}`);
-  lines.push(`Days of data: ${ctx.behavioral.daysOfData}`);
-
+  // Behavioral intelligence
+  if (ctx.behavioral.weeklySummary && ctx.behavioral.daysOfData > 0) {
+    lines.push(`\nBehavioral data (last 7 days): ${ctx.behavioral.weeklySummary}`);
+  }
   if (ctx.behavioral.patterns.length > 0) {
-    lines.push("\nBehavioral patterns detected:");
-    ctx.behavioral.patterns.slice(0, 4).forEach(p => {
-      lines.push(
-        `- ${p.pattern} [confidence: ${Math.round(p.confidence * 100)}%]`
-      );
+    lines.push("Detected patterns:");
+    ctx.behavioral.patterns.slice(0, 3).forEach(p =>
+      lines.push(`  - ${p.pattern} [${Math.round(p.confidence * 100)}% confidence]`)
+    );
+  }
+
+  // ── Decision memory ──────────────────────────────────────────────────────
+  if (ctx.memory.confirmedInsights.length > 0) {
+    lines.push("\nConfirmed behavioral insights:");
+    ctx.memory.confirmedInsights.slice(0, 3).forEach(i => lines.push(`  - ${i}`));
+  }
+  if (ctx.memory.recentOutcomes.length > 0) {
+    lines.push("Recent decisions with outcomes:");
+    ctx.memory.recentOutcomes.slice(0, 4).forEach(d => {
+      lines.push(`  - "${d.question.slice(0, 50)}" → ${d.outcome || "pending"}${d.reflection ? ` ("${d.reflection.slice(0, 40)}")` : ""}`);
     });
   }
+  lines.push(ctx.memory.confidenceContext);
 
   const context = lines.join("\n");
 
   return `${context}
 
-Generate a morning brief for ${ctx.user.name}.
+Generate a morning chief-of-staff brief for ${ctx.user.name}.
 
-CRITICAL INSTRUCTION: Do NOT summarize data. SYNTHESIZE behavior.
-Ask yourself: What is this person's current behavioral loop? Where are they stuck? What will happen today if nothing changes? What specific action breaks the pattern?
-
-The brief should contain:
-1. What you noticed (the behavioral reality, not today's numbers)
-2. Why it matters (consequence or trajectory)
-3. What to do today (one clear, specific action)
-
-Return a JSON object with exactly these fields:
+Return JSON:
 {
-  "brief": "3-4 sentences. Start with the most important behavioral observation — a pattern, a drift, a loop. Reference specific numbers from history, not just today. State the consequence clearly. End with the single most important action for today. Max 90 words.",
-  "anchors": [
-    "food anchor — specific to today, e.g. '1,340 cal left · 89g protein still needed'",
-    "schedule anchor — e.g. 'First meeting: 2:00 PM' or 'Clear day — protect the morning'",
-    "body anchor — e.g. 'Current: 178.2 lbs · down 0.6 this week' or 'Log weight this morning'"
+  "text": "2-3 sentence briefing. Start with a behavioral observation or context framing — not a data summary. Make it feel like a trusted advisor read the room and is giving their take.",
+  "todaysMove": "One sentence. The single most important action today. Start with a verb. Be specific: not 'work on your project' but 'Finish the SVN content plan before 4 PM'.",
+  "todaysMoveWhy": "One sentence. Why this move matters more than anything else today. Connect to their goals.",
+  "focusItems": [
+    "3 specific priorities for today. Mix domains based on their actual goals. Actionable, specific, time-aware."
   ],
-  "chips": ["3 chips — the most urgent questions for this specific person right now, based on patterns"],
-  "risk": "One sentence. The single biggest risk to today's performance or goal trajectory.",
-  "todaysMove": "One decisive sentence. The one action that matters most today."
+  "tonightRec": "One sentence. Clear evening recommendation. Specific and consistent with tomorrow.",
+  "risk": "One sentence. The most important thing to avoid today. Specific to their situation, not generic.",
+  "anchors": [
+    "Priority anchor — e.g. 'Top priority: Stripe integration deadline'",
+    "Schedule anchor — e.g. 'First meeting: 2:00 PM' or 'Clear calendar — protect it'",
+    "Progress anchor — e.g. 'Weight: 184 lbs · down 0.8' or 'Training: 3 days this week'"
+  ],
+  "chips": ["3 decision questions this person is most likely wrestling with today"]
 }
 
 Rules:
-- Do not start with "Good morning" or any greeting.
-- Do not use bullet points inside the brief.
-- Do not say "remember to", "make sure you", "don't forget", "it's important to".
-- Do not hedge recommendations.
-- Maximum 90 words for the brief field.
-- The chips must be questions this specific person should be asking, not generic suggestions.`;
+- focusItems: max 3 items, each one specific to their actual stated goals
+- tonightRec: one clear sentence, not a list
+- chips: questions they are genuinely likely to ask Apex, not generic
+- Maximum 80 words for the text field`;
 }
 
-// ─── Chat system prompt with full context ─────────────────────────────────────
+// ─── Chat system prompt ───────────────────────────────────────────────────────
 
 export function buildChatSystemPrompt(ctx: ApexContext): string {
-  const lines: string[] = [APEX_SYSTEM_PROMPT, "\n\nCurrent context:"];
+  const toneInstructions = getToneInstructions(ctx.user.decisionStyle || "direct");
+  const lines: string[] = [APEX_SYSTEM_PROMPT, "\n\n" + toneInstructions, "\n\nUser context:"];
 
-  lines.push(`User: ${ctx.user.name}`);
-  lines.push(`Goal: ${ctx.user.goal}`);
-  lines.push(`Today: ${ctx.today.dayOfWeek}, ${ctx.today.date}`);
-  lines.push(
-    `Calories: ${ctx.today.caloriesEaten}/${ctx.user.calorieTarget} eaten`
-  );
-  lines.push(
-    `Protein: ${ctx.today.proteinEaten}g/${ctx.user.proteinTarget}g eaten`
-  );
-  if (ctx.today.energyLevel) lines.push(`Energy: ${ctx.today.energyLevel}`);
-  if (ctx.today.firstMeeting)
-    lines.push(`First meeting: ${ctx.today.firstMeeting}`);
-  if (ctx.user.topPriority)
-    lines.push(`Top priority: ${ctx.user.topPriority}`);
-  if (ctx.recent.currentWeight)
-    lines.push(`Weight: ${ctx.recent.currentWeight} lbs`);
-  if (ctx.recent.weightTrend)
-    lines.push(`Weight trend: ${ctx.recent.weightTrend}`);
-  if (ctx.goals.weightRemaining != null)
-    lines.push(`Remaining to goal: ${ctx.goals.weightRemaining} lbs`);
-  if (ctx.goals.daysToDeadline != null)
-    lines.push(`Days to deadline: ${ctx.goals.daysToDeadline}`);
-
-  // Include behavioral patterns in chat too
-  if (ctx.behavioral.patterns.length > 0) {
-    lines.push(`\nLast 7 days: ${ctx.behavioral.weeklySummary}`);
-    lines.push("Behavioral patterns:");
-    ctx.behavioral.patterns.slice(0, 3).forEach(p => {
-      lines.push(`- ${p.pattern}`);
-    });
+  lines.push(`Name: ${ctx.user.name}`);
+  if (ctx.user.goals.length > 0) lines.push(`Goals: ${ctx.user.goals.join(" | ")}`);
+  if (ctx.user.topPriority) lines.push(`Priority: ${ctx.user.topPriority}`);
+  lines.push(`Decision style preference: ${ctx.user.decisionStyle}`);
+  if (ctx.user.derailers.length > 0) lines.push(`Known derailers: ${ctx.user.derailers.join(", ")}`);
+  if (ctx.user.productiveWindows.length > 0) lines.push(`Best hours: ${ctx.user.productiveWindows.join(", ")}`);
+  if (ctx.user.learnedInsights.length > 0) {
+    lines.push("Behavioral insights:");
+    ctx.user.learnedInsights.slice(0, 3).forEach(i => lines.push(`  - ${i}`));
   }
 
-  lines.push(
-    "\nRespond in 2-4 sentences unless the user explicitly asks for a plan or breakdown. Be specific to their data and patterns. Make a clear recommendation. Never hedge."
-  );
+  lines.push(`\nToday: ${ctx.today.dayOfWeek}`);
+  if (ctx.today.energyLevel) lines.push(`Energy: ${ctx.today.energyLevel}`);
+  if (ctx.today.firstMeeting) lines.push(`First meeting: ${ctx.today.firstMeeting}`);
+  lines.push(`Health signals: ${ctx.today.caloriesEaten}/${ctx.user.calorieTarget} cal`);
+  if (ctx.recent.currentWeight) lines.push(`Weight: ${ctx.recent.currentWeight} lbs`);
+
+  if (ctx.behavioral.patterns.length > 0) {
+    lines.push("\nDetected patterns:");
+    ctx.behavioral.patterns.slice(0, 3).forEach(p => lines.push(`  - ${p.pattern}`));
+  }
+
+  // ── Decision memory context ──────────────────────────────────────────────
+  if (ctx.memory.totalDecisions > 0) {
+    lines.push(`\n${ctx.memory.confidenceContext}`);
+  }
+
+  if (ctx.memory.confirmedInsights.length > 0) {
+    lines.push("\nConfirmed behavioral insights about this user:");
+    ctx.memory.confirmedInsights.slice(0, 4).forEach(i => lines.push(`  - ${i}`));
+  }
+
+  if (ctx.memory.recentOutcomes.length > 0) {
+    lines.push("\nRecent decision outcomes:");
+    ctx.memory.recentOutcomes.slice(0, 5).forEach(d => {
+      const line = `  - "${d.question.slice(0, 60)}" → ${d.recommendation.slice(0, 60)} → ${d.outcome || "outcome unknown"}${d.reflection ? ` ("${d.reflection.slice(0, 50)}")` : ""}`;
+      lines.push(line);
+    });
+    if (ctx.memory.successRate > 0) {
+      lines.push(`  Overall success rate: ${ctx.memory.successRate}% across ${ctx.memory.totalDecisions} decisions`);
+    }
+  }
+
+  lines.push(`\nFor decision questions: use MY TAKE / WHY / WHAT YOU'RE TRADING / WHAT YOU'LL GAIN / CONFIDENCE / GOAL ALIGNMENT format. Keep each section to 1-2 sentences. Total response under 200 words unless user requests a plan.`);
+  lines.push(`CONFIDENCE: ${ctx.memory.confidenceContext.includes("minimal") ? "Cap at 6/10." : ctx.memory.confidenceContext.includes("early") ? "Cap at 7/10." : "Use historical outcomes to calibrate."} Never claim 9-10/10 without strong supporting evidence from this user's history.`);
 
   return lines.join("\n");
 }
 
-// ─── Pattern-specific brief builder ──────────────────────────────────────────
-// Each pattern type has its own voice. The brief leads with behavioral observation,
-// not today's data. Data is used to anchor the observation, not lead it.
-
-function buildPatternLedBrief(
-  topPattern: import("./memory").BehavioralPattern,
-  ctx: ApexContext,
-  calLeft: number
-): string {
-  const p = topPattern.pattern.toLowerCase();
-  const priority = ctx.user.topPriority;
-  const meeting = ctx.today.firstMeeting;
-  const pat = topPattern.pattern.replace(/^[a-z]/, c => c.toUpperCase());
-
-  if (p.includes("under-eat")) {
-    return `The under-eating pattern is still running. ${pat}. If today goes the same way, your energy collapses before 3 PM and the afternoon is gone. ${priority ? `That's the worst time to be pushing on ${priority}.` : "That's the worst time for anything that matters."} Eat a real breakfast before you open the laptop.`;
-  }
-
-  if (p.includes("weekend")) {
-    return `Your weekends are disrupting your week. ${pat}. Monday is usually where the week derails — ${ctx.today.dayOfWeek === "Monday" ? "that's today" : "watch for it"}. ${priority ? `${priority} needs your structured weekday version, not the post-weekend fog.` : "Get the routine back."} ${meeting ? `Log food today and protect the block before your ${meeting} meeting.` : "Log food today and rebuild the structure."}`;
-  }
-
-  if (p.includes("training") || (p.includes("workout") && p.includes("consistency"))) {
-    return `${pat}. That training streak is doing more than fitness — it's the main driver of your energy and focus right now. ${priority ? `${priority} gets your best hours on the days you move.` : "Keep this going."} ${calLeft > 0 ? `Eat first (${calLeft} cal still needed today), then protect the workout slot.` : `Protect the workout slot today.`}`;
-  }
-
-  if (p.includes("energy") && (p.includes("workout") || p.includes("higher"))) {
-    return `${pat}. That's not coincidence — training is the most reliable energy lever you have. ${priority ? `${priority} gets better work on the days you've moved.` : "Use this."} ${calLeft > 500 ? `Eat properly today (${calLeft} cal left), then decide on the workout.` : "Build the workout in today."}`;
-  }
-
-  if (p.includes("protein")) {
-    return `Protein is the recurring miss — ${pat}. That gap is slowing recovery and leaving you under-fuelled for focused work. ${priority ? `${priority} gets worse work when you're running on empty protein.` : ""} ${meeting ? `Plan a protein-dense lunch before your ${meeting}.` : "Fix it at lunch today."} Front-load your protein.`;
-  }
-
-  if (p.includes("log") && p.includes("only")) {
-    return `You've been logging inconsistently — ${pat.toLowerCase()}. Without data I'm working blind on your patterns. ${priority ? `${priority} is the work priority, but your nutrition is the input.` : ""} ${meeting ? `Log every meal today, starting with breakfast before your ${meeting}.` : "Log every meal today, starting now."}`;
-  }
-
-  // Generic pattern lead
-  return `${pat}. ${priority ? `${priority} is the work priority today.` : "The work priority is clear."} ${meeting ? `First meeting at ${meeting} — protect the morning.` : "Calendar looks clear — use the block."} ${calLeft > 800 ? `You're ${calLeft} cal short — eat before you work.` : "Eat well and execute."}`;
-}
-
 // ─── Mock brief ───────────────────────────────────────────────────────────────
-// Used when no API key is present. Demonstrates behavioral synthesis even in
-// mock mode — patterns over summaries.
 
 export function getMockBrief(ctx: ApexContext): {
-  brief: string;
+  text: string;
   anchors: [string, string, string];
   chips: string[];
   risk: string;
   todaysMove: string;
+  todaysMoveWhy: string;
+  focusItems: string[];
+  tonightRec: string;
 } {
-  const calLeft = ctx.user.calorieTarget - ctx.today.caloriesEaten;
-  const protLeft = Math.round(ctx.user.proteinTarget - ctx.today.proteinEaten);
-
-  // A pattern is "strong" if confidence > 0.72 AND it's not just a momentum trend
-  const strongPatterns = ctx.behavioral.patterns.filter(
-    p => p.confidence >= 0.72 && !p.pattern.toLowerCase().includes("tightening") && !p.pattern.toLowerCase().includes("drifting above")
-  );
-  const topPattern = strongPatterns.length > 0 ? strongPatterns[0] : null;
-
-  let brief: string;
-
-  // ── Pattern-led brief: behavioral observation always leads when data exists ─
   const risk = deriveRisk(ctx);
   const todaysMove = deriveTodaysMove(ctx);
+  const todaysMoveWhy = deriveTodaysMoveWhy(ctx);
+  const focusItems = buildFocusItems(ctx).slice(0, 3);
+  const tonightRec = buildTonightRec(ctx);
+  const brief = buildBriefText(ctx);
+  const chips = deriveChips(ctx);
 
-  if (topPattern && ctx.behavioral.daysOfData >= 3) {
-    brief = buildPatternLedBrief(topPattern, ctx, calLeft);
-  } else if (ctx.today.caloriesEaten === 0) {
-    // No patterns yet → forward-looking setup brief
-    brief = `Nothing logged yet — the day is unwritten. Your target is ${ctx.user.calorieTarget} cal and ${ctx.user.proteinTarget}g protein. ${ctx.user.topPriority ? `${ctx.user.topPriority} is the priority today — guard your morning before it disappears.` : "Your first work block is your most valuable — don't let it fill with admin."} ${ctx.today.firstMeeting ? `First meeting at ${ctx.today.firstMeeting}.` : "Calendar looks clear."} Eat breakfast, then open the laptop.`;
-  } else if (calLeft > 800) {
-    brief = `You're ${calLeft} cal short with ${protLeft}g protein still needed — that's two real meals left today. ${ctx.user.topPriority ? `Don't let the deficit bleed into your focus on ${ctx.user.topPriority}.` : "Undereating will cost you focus before it costs you weight."} ${ctx.today.firstMeeting ? `First meeting at ${ctx.today.firstMeeting} — eat before it.` : "No meetings blocking you."} Eat before you work.`;
-  } else {
-    const proteinClose = protLeft > 0 && protLeft < 40;
-    brief = `You're on track — ${ctx.today.caloriesEaten} cal and ${ctx.today.proteinEaten}g protein in. ${ctx.user.topPriority ? `${ctx.user.topPriority} should be getting your best hours today.` : "The day is set up well."} ${ctx.today.firstMeeting ? `Meeting at ${ctx.today.firstMeeting} — protect the window before it.` : "No meetings blocking you."} ${proteinClose ? `Close the ${protLeft}g protein gap before tonight.` : !ctx.today.workoutLogged ? "Get the workout done — you have the fuel for it." : "This is what a solid day looks like."}`;
-  }
+  const priorityAnchor = ctx.user.topPriority
+    ? `Priority: ${ctx.user.topPriority}`
+    : ctx.user.goals[0]
+    ? `Goal: ${ctx.user.goals[0].slice(0, 45)}`
+    : "Set your goals in the Me tab";
 
-  // Anchors
-  const calAnchor =
-    ctx.today.caloriesEaten > 0
-      ? `${calLeft > 0 ? calLeft.toLocaleString() + " cal left" : "Calories hit"} · ${protLeft > 0 ? protLeft + "g protein still needed" : "Protein hit"}`
-      : `Eat ${ctx.user.calorieTarget.toLocaleString()} cal · hit ${ctx.user.proteinTarget}g protein`;
   const schedAnchor = ctx.today.firstMeeting
     ? `First meeting: ${ctx.today.firstMeeting}`
-    : "No meetings logged — protect the day";
+    : "No meetings set — protect the day";
+
   const bodyAnchor = ctx.recent.currentWeight
-    ? `Current: ${ctx.recent.currentWeight} lbs${ctx.recent.weightTrend ? ` · ${ctx.recent.weightTrend}` : ""}`
-    : "Log weight this morning";
+    ? `Weight: ${ctx.recent.currentWeight} lbs${ctx.recent.weightTrend ? ` · ${ctx.recent.weightTrend}` : ""}`
+    : ctx.today.workoutLogged
+    ? "Workout logged today"
+    : "Log a workout or weight";
 
-  // Chips — derived from state, not generic
-  const chips: string[] =
-    ctx.today.caloriesEaten === 0
-      ? ["What should I eat first?", "Plan my morning", "What's my goal?"]
-      : calLeft > 600
-      ? ["What should I eat next?", "How do I hit my protein?", "Should I work out today?"]
-      : ["Am I going to hit my goal?", "Should I work out today?", "What should I work on first?"];
-
-  return { brief, anchors: [calAnchor, schedAnchor, bodyAnchor], chips, risk, todaysMove };
+  return {
+    text: brief,
+    anchors: [priorityAnchor, schedAnchor, bodyAnchor],
+    chips,
+    risk,
+    todaysMove,
+    todaysMoveWhy,
+    focusItems,
+    tonightRec,
+  };
 }
 
-// ─── Mock chat responses ──────────────────────────────────────────────────────
+// ─── Derivation helpers ───────────────────────────────────────────────────────
+
+function deriveTodaysMoveWhy(ctx: ApexContext): string {
+  const patterns = ctx.behavioral.patterns;
+  const topPattern = patterns[0];
+
+  if (ctx.behavioral.daysOfData < 3) {
+    if (!ctx.today.hasLoggedFood) return "Logging today builds the data Apex needs to give you useful recommendations.";
+    return "Establishing your baseline is the prerequisite for everything else Apex can do for you.";
+  }
+
+  const priority = ctx.user.topPriority || ctx.user.goals[0];
+  if (priority) {
+    return `This creates more momentum on ${priority.slice(0, 50)} than anything else on today's schedule.`;
+  }
+  if (topPattern) {
+    const p = topPattern.pattern.toLowerCase();
+    if (p.includes("training")) return "Your energy and focus are reliably higher on days you train — this compounds.";
+    if (p.includes("under-eat")) return "Fueling properly prevents the afternoon energy collapse that's been cutting your output short.";
+  }
+  return "This is the highest-leverage action today — everything else is secondary.";
+}
+
+function buildFocusItems(ctx: ApexContext): string[] {
+  const items: string[] = [];
+  const patterns = ctx.behavioral.patterns;
+  const topPattern = patterns[0];
+
+  // Lead with work priority
+  if (ctx.user.topPriority) {
+    items.push(`${ctx.user.topPriority} — focused block, not multitasking`);
+  } else if (ctx.user.goals.length > 0) {
+    items.push(`${ctx.user.goals[0]} — make a concrete move today`);
+  }
+
+  // Fitness if relevant (not first unless it's in goals position 1)
+  if (!ctx.today.workoutLogged) {
+    if (topPattern && topPattern.pattern.toLowerCase().includes("training")) {
+      items.push("Gym — protect the consistency streak");
+    } else {
+      items.push("Movement — 30 min minimum");
+    }
+  }
+
+  // Second goal if exists
+  if (ctx.user.goals.length > 1 && !items.some(i => i.includes(ctx.user.goals[1].slice(0, 15)))) {
+    items.push(ctx.user.goals[1].length > 55 ? ctx.user.goals[1].slice(0, 55) + "…" : ctx.user.goals[1]);
+  }
+
+  // Nutrition (only if not logged yet and it's morning)
+  const calLeft = ctx.user.calorieTarget - ctx.today.caloriesEaten;
+  if (calLeft > ctx.user.calorieTarget * 0.85) {
+    items.push(`Eat to target today`);
+  }
+
+  return items.slice(0, 3);
+}
+
+function buildTonightRec(ctx: ApexContext): string {
+  const hasEarlyMeeting = ctx.today.firstMeeting && ctx.today.firstMeeting < "10:00";
+  const hasWeekendPattern = ctx.behavioral.patterns.some(p =>
+    p.pattern.toLowerCase().includes("weekend")
+  );
+
+  if (hasEarlyMeeting) return "Bed by 10:30 PM — you have an early start.";
+  if (hasWeekendPattern && (ctx.today.dayOfWeek === "Friday" || ctx.today.dayOfWeek === "Saturday")) {
+    return "Stay close to your routine tonight — weekend disruption is a known pattern.";
+  }
+  return "Stay in, cook dinner, and sleep before midnight.";
+}
+
+function buildBriefText(ctx: ApexContext): string {
+  const patterns = ctx.behavioral.patterns;
+  const hasPatterns = patterns.length > 0 && ctx.behavioral.daysOfData >= 3;
+
+  if (ctx.behavioral.daysOfData < 3) {
+    const priority = ctx.user.topPriority || (ctx.user.goals[0] || null);
+    const daysLeft = Math.max(0, 3 - ctx.behavioral.daysOfData);
+    return `Apex is still calibrating your baseline — ${daysLeft} more day${daysLeft !== 1 ? "s" : ""} of data needed before patterns emerge.${priority ? ` For now: ${priority} is the priority.` : ""} Log consistently and the recommendations get sharper.`;
+  }
+
+  if (!hasPatterns) {
+    const priority = ctx.user.topPriority || (ctx.user.goals[0] || "your main goal");
+    return `Your data is stable and no strong behavioral patterns have emerged yet — that's a clean slate to work with. ${priority} is the priority. ${ctx.today.firstMeeting ? `Protect the block before your ${ctx.today.firstMeeting} meeting.` : "Use the open window."}`;
+  }
+
+  const top = patterns[0];
+  const p = top.pattern.toLowerCase();
+
+  if (p.includes("under-eat")) {
+    return `The under-eating pattern is running again — ${top.pattern.toLowerCase()}. That's been compressing your afternoon focus window. Fuel first today, everything else follows from that.`;
+  }
+  if (p.includes("training") || (p.includes("workout") && p.includes("consistency"))) {
+    return `Training consistency is your current edge — ${top.pattern.toLowerCase()}. That's keeping your energy and output above baseline. ${ctx.user.topPriority ? `Keep ${ctx.user.topPriority} as the anchor.` : ""} Protect the streak.`;
+  }
+  if (p.includes("energy") && p.includes("workout")) {
+    return `There's a clear link in your data: training days are your best output days. ${top.pattern.toLowerCase()}. Today's gym decision matters more than just fitness.`;
+  }
+  if (p.includes("weekend")) {
+    return `The weekend disruption pattern is showing — ${top.pattern.toLowerCase()}. Monday needs more structure than usual to prevent the week from drifting. Lock your morning now.`;
+  }
+
+  return `${top.pattern.replace(/^[a-z]/, c => c.toUpperCase())}. ${ctx.user.topPriority ? `${ctx.user.topPriority} is still the priority.` : "The data is telling you something — act on it today."}`;
+}
+
+function deriveChips(ctx: ApexContext): string[] {
+  const chips: string[] = ["Plan my day"];
+
+  const day = ctx.today.dayOfWeek;
+  if (day === "Friday" || day === "Saturday" || day === "Sunday") {
+    chips.push("Should I go out tonight?");
+  } else {
+    chips.push("What should I focus on?");
+  }
+
+  if (ctx.user.commonDecisionCategories.includes("money")) {
+    chips.push("Is this worth spending on?");
+  } else if (ctx.user.commonDecisionCategories.includes("opportunities")) {
+    chips.push("Should I say yes to this?");
+  } else {
+    chips.push("Am I on track?");
+  }
+
+  return chips;
+}
+
+// ─── Mock chat responses — V2.1 chief of staff format ────────────────────────
 
 export function getMockChatResponse(message: string, ctx: ApexContext): string {
   const lower = message.toLowerCase();
   const calLeft = ctx.user.calorieTarget - ctx.today.caloriesEaten;
   const protLeft = Math.round(ctx.user.proteinTarget - ctx.today.proteinEaten);
+  const goals = ctx.user.goals;
+  const priority = ctx.user.topPriority || goals[0] || "your top goal";
   const topPattern = ctx.behavioral.patterns[0];
+  const style = ctx.user.decisionStyle || "direct";
 
-  if (
-    lower.includes("eat") ||
-    lower.includes("food") ||
-    lower.includes("meal") ||
-    lower.includes("lunch") ||
-    lower.includes("breakfast") ||
-    lower.includes("dinner")
-  ) {
-    return `You have ${calLeft} cal and ${protLeft}g protein left. Best options: Greek yogurt + almonds (280 cal, 22g protein), chicken bowl (600 cal, 48g), or eggs + toast + protein shake (500 cal, 45g). The chicken bowl gives you the best protein-to-calorie ratio given where you are. Go with that.`;
+  // ── Tonight / social decisions ─────────────────────────────────────────
+  if (lower.includes("go out") || (lower.includes("tonight") && !lower.includes("tonight recommendation")) || lower.includes("stay in or")) {
+    const hasMeeting = ctx.today.firstMeeting && ctx.today.firstMeeting < "11:00";
+    const hasEnergyIssue = ctx.today.energyLevel === "low" || (topPattern && topPattern.pattern.toLowerCase().includes("energy"));
+    const rec = hasMeeting || hasEnergyIssue ? "Stay in tonight." : "Keep it early and optional — out by 11.";
+    const confidence = hasMeeting || hasEnergyIssue ? 9 : 6;
+
+    return `MY TAKE\n${rec}\n\nWHY\n${hasMeeting ? `You have an ${ctx.today.firstMeeting} start tomorrow — late nights compress your next day's output.` : hasEnergyIssue ? "Your energy is already running low. A social night won't fix that." : "No hard constraints, but late nights reliably tank the following morning."}\n\nWHAT YOU'RE TRADING\nA social opportunity. Probably a fun night.\n\nWHAT YOU'LL GAIN\nA sharper morning, more capacity for ${priority}.\n\nCONFIDENCE: ${confidence}/10\n\nGOAL ALIGNMENT\nProtects your ability to execute on: ${priority}.`;
   }
 
-  if (
-    lower.includes("plan") ||
-    lower.includes("day") ||
-    lower.includes("morning") ||
-    lower.includes("schedule")
-  ) {
+  // ── I feel off / recovery ─────────────────────────────────────────────
+  if (lower.includes("feel off") || lower.includes("wasted the day") || lower.includes("get back on track") || lower.includes("i need a plan")) {
+    return `MY TAKE\nStop trying to salvage the whole day — salvage the next 2 hours.\n\nWHY\nPerfectionism about a lost day usually kills the evening too. One focused block beats zero.\n\nWHAT YOU'RE TRADING\nThe feeling of having a "complete" day.\n\nWHAT YOU'LL GAIN\nMomentum into tomorrow. That's what actually matters.\n\nCONFIDENCE: 9/10\n\nGOAL ALIGNMENT\nGets you back toward: ${priority}.`;
+  }
+
+  // ── Money decisions ────────────────────────────────────────────────────
+  if (lower.includes("spend") || lower.includes("buy") || lower.includes("worth it") || lower.includes("purchase")) {
+    const hasFinancialGoal = goals.some(g => g.toLowerCase().includes("spend") || g.toLowerCase().includes("budget") || g.toLowerCase().includes("sav"));
+    const rec = hasFinancialGoal ? "No — your goals say otherwise." : "Ask if it moves any of your goals forward. If not, hold off.";
+    const conf = hasFinancialGoal ? 9 : 6;
+    return `MY TAKE\n${rec}\n\nWHY\n${hasFinancialGoal ? "You've set a financial goal. Every exception weakens the constraint." : "Non-essential spending is fine when it's intentional. The question is whether this is intentional or reactive."}\n\nWHAT YOU'RE TRADING\nThe money and the future optionality it represents.\n\nWHAT YOU'LL GAIN\n${hasFinancialGoal ? "Staying on track with your financial goal." : "Clarity on whether you're spending with intention."}\n\nCONFIDENCE: ${conf}/10\n\nGOAL ALIGNMENT\n${hasFinancialGoal ? "Directly supports your financial goals." : "Unclear — needs more context."}`;
+  }
+
+  // ── Opportunity / yes or no ────────────────────────────────────────────
+  if (lower.includes("say yes") || lower.includes("opportunity") || lower.includes("should i take") || lower.includes("worth my time")) {
+    return `MY TAKE\nOnly say yes if it clearly serves one of your active goals.\n\nWHY\nEvery yes is a no to something else. At your stage, focus compounds faster than variety.\n\nWHAT YOU'RE TRADING\nPossible upside from this opportunity.\n\nWHAT YOU'LL GAIN\nDepth on what already matters: ${goals.slice(0, 2).join(", ")}.\n\nCONFIDENCE: 7/10\n\nGOAL ALIGNMENT\nFilter it against: ${goals.slice(0, 2).join("; ")}. If it doesn't serve those, decline.`;
+  }
+
+  // ── Prioritize / what to focus on ─────────────────────────────────────
+  if (lower.includes("prioritize") || lower.includes("focus on") || lower.includes("cut from") || lower.includes("what should i work")) {
+    return `MY TAKE\n${priority} is the answer. Everything else is maintenance until that moves.\n\nWHY\nYou've identified it as the priority — which means every other task is either enabling it or competing with it.\n\nWHAT YOU'RE TRADING\nProgress on other things.\n\nWHAT YOU'LL GAIN\nCompound momentum on what matters most.\n\nCONFIDENCE: 9/10\n\nGOAL ALIGNMENT\nDirectly advances: ${priority}.`;
+  }
+
+  // ── Weekend planning ────────────────────────────────────────────────────
+  if (lower.includes("weekend") || lower.includes("saturday") || lower.includes("sunday")) {
+    const hasPattern = topPattern && topPattern.pattern.toLowerCase().includes("weekend");
+    return `MY TAKE\nBuild two anchors: same wake time, one focused work block.\n\nWHY\n${hasPattern ? "Your data shows a pattern: unstructured weekends directly precede your worst Mondays." : "Weekends without any structure reliably erode the momentum built during the week."}\n\nWHAT YOU'RE TRADING\nFull spontaneity.\n\nWHAT YOU'LL GAIN\nA Monday that starts with velocity instead of recovery.\n\nCONFIDENCE: 8/10\n\nGOAL ALIGNMENT\nProtects your ability to make progress on: ${priority} next week.`;
+  }
+
+  // ── Food ────────────────────────────────────────────────────────────────
+  if (lower.includes("eat") || lower.includes("food") || lower.includes("lunch") || lower.includes("breakfast") || lower.includes("dinner")) {
+    if (calLeft > 200) {
+      return `You have ${calLeft} cal and ${protLeft}g protein left. Best options: Greek yogurt + almonds (280 cal, 22g protein), chicken bowl (600 cal, 48g), or eggs + toast + protein shake (500 cal, 45g). The chicken bowl gives you the best protein-to-calorie ratio. Go with that.`;
+    }
+    return `You're close to target — ${ctx.today.caloriesEaten} cal logged. Focus on protein now: Greek yogurt, eggs, or a protein shake to close the ${protLeft}g gap.`;
+  }
+
+  // ── Day planning ────────────────────────────────────────────────────────
+  if (lower.includes("plan") || lower.includes("plan my day") || lower.includes("schedule") || lower.includes("morning")) {
     const meeting = ctx.today.firstMeeting || "your first commitment";
-    const priority = ctx.user.topPriority || "your top priority";
-    return `Eat first — you need ${calLeft} cal today. Then a focused block on ${priority} until ${meeting}. No context-switching before that meeting. After: gym if you have energy left. That's the move.`;
+    return `Here's the structure: eat first if you haven't (${calLeft > 400 ? `${calLeft} cal still needed` : "you're close to target"}), then a focused block on ${priority} until ${meeting}. No context-switching before the meeting. After: gym. That's the play.`;
   }
 
-  if (
-    lower.includes("track") ||
-    lower.includes("progress") ||
-    lower.includes("goal") ||
-    lower.includes("hit")
-  ) {
-    const w = ctx.recent.currentWeight;
-    const r = ctx.goals.weightRemaining;
-    const d = ctx.goals.daysToDeadline;
-    if (w && r && d) {
-      return `You're at ${w} lbs with ${r} lbs remaining and ${d} days left. You need ${ctx.goals.weeklyRateNeeded} lbs/week. That's ${ctx.goals.onTrack ? "achievable" : "tight — you need to tighten up now"}. ${ctx.today.caloriesEaten < 500 ? "Today's main job: actually eat at target." : "Today looks fine so far."}`;
-    }
-    return `Log your weight so I can give you a real progress number. Based on your food logs, consistency is the main variable right now.`;
+  // ── Progress check ─────────────────────────────────────────────────────
+  if (lower.includes("on track") || lower.includes("progress") || lower.includes("am i doing")) {
+    const hasWeight = ctx.recent.currentWeight;
+    const weightLine = hasWeight ? `Weight is at ${ctx.recent.currentWeight} lbs${ctx.recent.weightTrend ? ` — ${ctx.recent.weightTrend}` : ""}.` : "Log your weight for a progress read.";
+    const patternLine = topPattern ? ` Main pattern: ${topPattern.pattern}.` : "";
+    return `${weightLine}${patternLine} The real scorecard: did ${priority} move today? That's the number that matters most.`;
   }
 
-  if (lower.includes("focus") || lower.includes("work") || lower.includes("priorit")) {
-    return `${ctx.user.topPriority || "Your top priority"} is the only thing that should have your full attention right now. Everything else is maintenance. Block 90 minutes this morning with no interruptions and make a concrete dent. What specifically needs to happen on it today?`;
+  // ── Workout ─────────────────────────────────────────────────────────────
+  if (lower.includes("workout") || lower.includes("gym") || lower.includes("train") || lower.includes("exercise")) {
+    const hasStreak = topPattern && topPattern.pattern.toLowerCase().includes("training");
+    return `${hasStreak ? "You're on a streak — protect it." : "Get it done today."} ${ctx.today.energyLevel === "low" ? "70% effort is the right call when energy is low. Consistent effort beats maximum effort." : "You have the fuel for a solid session."} Compound movements, under 60 minutes.`;
   }
 
-  if (lower.includes("motivat") || lower.includes("help")) {
-    return `You're running a company and trying to stay in shape at the same time. The data points to one lever: eating at target consistently. Everything else — energy, focus, weight trend — follows from that. ${ctx.today.caloriesEaten < ctx.user.calorieTarget * 0.5 ? `Today you're at ${ctx.today.caloriesEaten} cal. That's the problem to solve right now.` : "Today you're doing it. Keep the same pattern tomorrow."}`;
-  }
-
-  if (
-    lower.includes("workout") ||
-    lower.includes("gym") ||
-    lower.includes("lift") ||
-    lower.includes("exercise")
-  ) {
-    return `Based on your goal and energy, a strength session today makes sense. ${ctx.today.energyLevel === "low" ? "Keep intensity moderate — 70% effort. Don't skip it, but don't blow up either." : "You have enough fuel for a solid session."} Prioritize compound lifts, keep it under 60 minutes.`;
-  }
-
-  if (lower.includes("pattern") || lower.includes("notice") || lower.includes("trend")) {
-    if (topPattern) {
-      return `The main thing I'm noticing: ${topPattern.pattern.toLowerCase().replace(/^[a-z]/, c => c.toUpperCase())}. That's been the recurring theme. ${topPattern.evidence.length > 0 ? `Evidence: ${topPattern.evidence.slice(0, 2).join(", ")}.` : ""} The fix is consistent execution over the next 5 days.`;
-    }
-    return `Not enough data yet to identify strong patterns — need at least a week of logs. The more you track, the more specific I can get.`;
-  }
-
-  // Default: proactive recommendation based on current state
+  // ── Default: proactive ─────────────────────────────────────────────────
   if (ctx.today.caloriesEaten === 0) {
-    return `You haven't logged food yet today. Start there — everything else (energy, focus, weight) traces back to whether you're eating at target. What's your first meal?`;
+    return `Nothing logged yet today. Fuel first — everything else (energy, focus, output) traces back to whether you're properly fed. What's your first meal?`;
   }
   if (calLeft > 600) {
-    return `You still have ${calLeft} cal and ${protLeft}g protein left today. The most useful thing right now is planning your next two meals. What do you have access to?`;
+    return `You still have ${calLeft} cal and ${protLeft}g protein to hit today. Most useful next step: plan your next two meals now. What do you have access to?`;
   }
-  return `You're at ${ctx.today.caloriesEaten} cal and ${ctx.today.proteinEaten}g protein today. ${ctx.user.topPriority ? `On the work side, ${ctx.user.topPriority} is the priority.` : ""} What specifically are you trying to decide?`;
+  return `You're at ${ctx.today.caloriesEaten} cal today. ${priority} is the priority. What are you trying to decide?`;
 }

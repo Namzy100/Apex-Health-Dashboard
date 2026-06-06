@@ -2,6 +2,7 @@ import type { ApexState } from "@/lib/store";
 import { extractPatterns } from "./patterns";
 import type { BehavioralPattern } from "./memory";
 import { buildWeeklySummary } from "./weekly-summary";
+import { buildDecisionContext, computeDecisionStats, getMemoryConfidenceContext } from "./learning-engine";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -9,6 +10,14 @@ export interface ApexContext {
   user: {
     name: string;
     goal: string;
+    goals: string[];
+    preferences: string[];
+    decisionStyle: string;
+    derailers: string[];
+    productiveWindows: string[];
+    currentPriorities: string[];
+    commonDecisionCategories: string[];
+    learnedInsights: string[];
     calorieTarget: number;
     proteinTarget: number;
     stepTarget: number;
@@ -43,9 +52,24 @@ export interface ApexContext {
   };
   // ── Behavioral intelligence layer ─────────────────────────────────────────
   behavioral: {
-    patterns: BehavioralPattern[];      // extracted behavioral patterns, sorted by confidence
-    weeklySummary: string;              // token-compressed 7-day summary
-    daysOfData: number;                 // how many historical days are available
+    patterns: BehavioralPattern[];
+    weeklySummary: string;
+    daysOfData: number;
+  };
+  // ── Decision memory layer — V2.3 ─────────────────────────────────────────
+  memory: {
+    recentOutcomes: {
+      question: string;
+      recommendation: string;
+      outcome?: string;
+      reflection?: string;
+      category?: string;
+    }[];
+    confirmedInsights: string[];
+    generatedInsights: string[];
+    successRate: number;
+    totalDecisions: number;
+    confidenceContext: string;   // guidance for AI confidence calibration
   };
 }
 
@@ -142,10 +166,26 @@ export function buildContext(state: ApexState): ApexContext {
   const patterns = extractPatterns(allSnapshots);
   const weeklySummary = buildWeeklySummary(allSnapshots);
 
+  // ── Decision memory ──────────────────────────────────────────────────────
+  const decisions = state.recentDecisions || [];
+  const stats = computeDecisionStats(decisions);
+  const recentOutcomes = buildDecisionContext(decisions);
+  const confirmedInsights = profile.learnedInsights || [];
+  const generatedInsights = profile.generatedInsights || [];
+  const confidenceContext = getMemoryConfidenceContext(decisions, confirmedInsights);
+
   return {
     user: {
       name: profile.name || "there",
-      goal: profile.goal || "improve health and performance",
+      goal: profile.goal || "build consistent high-performance habits",
+      goals: profile.goals || [],
+      preferences: profile.preferences || [],
+      decisionStyle: profile.decisionStyle || "direct",
+      derailers: profile.derailers || [],
+      productiveWindows: profile.productiveWindows || [],
+      currentPriorities: profile.currentPriorities || [],
+      commonDecisionCategories: profile.commonDecisionCategories || [],
+      learnedInsights: profile.learnedInsights || [],
       calorieTarget: profile.calorieTarget,
       proteinTarget: profile.proteinTarget,
       stepTarget: profile.stepTarget,
@@ -183,6 +223,14 @@ export function buildContext(state: ApexState): ApexContext {
       patterns,
       weeklySummary,
       daysOfData: allSnapshots.length,
+    },
+    memory: {
+      recentOutcomes,
+      confirmedInsights,
+      generatedInsights,
+      successRate: stats.successRate,
+      totalDecisions: stats.total,
+      confidenceContext,
     },
   };
 }

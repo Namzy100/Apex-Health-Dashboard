@@ -9,11 +9,14 @@ export const runtime = "nodejs";
 const BRIEF_MODELS = ["claude-opus-4-5", "claude-sonnet-4-5"];
 
 interface BriefResult {
-  brief: string;
+  text: string;             // standardized — replaces the old "brief" key
   anchors: [string, string, string];
   chips: string[];
   risk?: string;
   todaysMove?: string;
+  todaysMoveWhy?: string;
+  focusItems?: string[];
+  tonightRec?: string;
 }
 
 // ─── Structured validation ────────────────────────────────────────────────────
@@ -21,11 +24,29 @@ interface BriefResult {
 function validateBriefResult(parsed: unknown): parsed is BriefResult {
   if (!parsed || typeof parsed !== "object") return false;
   const p = parsed as Record<string, unknown>;
-  if (typeof p.brief !== "string" || p.brief.length < 10) return false;
+  // Accept both `text` and legacy `brief` key from older prompts
+  const textValue = p.text ?? p.brief;
+  if (typeof textValue !== "string" || textValue.length < 10) return false;
   if (!Array.isArray(p.anchors) || p.anchors.length !== 3) return false;
   if (!p.anchors.every((a: unknown) => typeof a === "string" && a.length > 0)) return false;
   if (!Array.isArray(p.chips) || p.chips.length < 2) return false;
   return true;
+}
+
+// Normalize the result to always use `text`
+function normalizeBriefResult(parsed: Record<string, unknown>): BriefResult {
+  return {
+    text: (parsed.text ?? parsed.brief) as string,
+    anchors: parsed.anchors as [string, string, string],
+    chips: parsed.chips as string[],
+    risk: parsed.risk as string | undefined,
+    todaysMove: parsed.todaysMove as string | undefined,
+    todaysMoveWhy: parsed.todaysMoveWhy as string | undefined,
+    focusItems: parsed.focusItems as string[] | undefined,
+    tonightRec: Array.isArray(parsed.tonightRec)
+      ? (parsed.tonightRec as string[]).join(". ")
+      : (parsed.tonightRec as string | undefined),
+  };
 }
 
 function extractJson(text: string): BriefResult | null {
@@ -34,7 +55,7 @@ function extractJson(text: string): BriefResult | null {
   if (!match) return null;
   try {
     const parsed = JSON.parse(match[0]);
-    return validateBriefResult(parsed) ? parsed : null;
+    return validateBriefResult(parsed) ? normalizeBriefResult(parsed as unknown as Record<string, unknown>) : null;
   } catch {
     return null;
   }

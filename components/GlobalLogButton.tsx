@@ -7,7 +7,7 @@ import { useApex } from "@/lib/store";
 
 // Shown on Brief / Intelligence / Command only.
 // Position adjusts on Command to sit above the fixed input bar.
-const SHOW_ON = ["/", "/intelligence", "/command"];
+const SHOW_ON = ["/", "/intelligence", "/command"]; // Today / Memory / Ask
 
 export default function GlobalLogButton() {
   const { dispatch } = useApex();

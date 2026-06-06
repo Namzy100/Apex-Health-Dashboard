@@ -29,8 +29,41 @@ export interface WeightLog {
   weight: number; // lbs
 }
 
+export type DecisionStyle = "direct" | "balanced" | "gentle" | "brutally_honest";
+
+// ─── Decision Record — extended for outcome tracking ─────────────────────────
+
+export type DecisionOutcome = "worked" | "mixed" | "did_not_work";
+
+export interface DecisionRecord {
+  id: string;
+  question: string;
+  recommendation: string;
+  confidence?: string;
+  category?: string;
+  createdAt: string;
+  // V2.3: outcome tracking
+  outcome?: DecisionOutcome;
+  reflection?: string;
+  reviewedAt?: string;
+}
+
 export interface UserProfile {
   name: string;
+
+  // ── V2: Chief of Staff memory layer ────────────────────────────────────────
+  goals: string[];                        // multi-domain goal statements
+  preferences: string[];                  // explicit behavioral preferences
+  decisionStyle: DecisionStyle;           // how Apex should deliver advice
+  derailers: string[];                    // what typically throws the day off
+  productiveWindows: string[];            // when they do their best work
+  currentPriorities: string[];            // top priorities this week/month
+  commonDecisionCategories: string[];     // what kinds of decisions they face most
+  learnedInsights: string[];              // confirmed behavioral insights
+  dismissedInsights: string[];            // insights the user dismissed
+  generatedInsights: string[];            // AI-generated, awaiting review
+
+  // ── Legacy fields — kept for backward compat + logging ───────────────────
   goal: string;
   calorieTarget: number;
   proteinTarget: number;
@@ -57,6 +90,8 @@ export interface ApexState {
   today: DailyState;
   weightHistory: WeightLog[];
   dailyHistory: DailySnapshot[];   // compressed daily archives, last 30 days
+  isOnboarded: boolean;            // true after first-run flow completes
+  recentDecisions: DecisionRecord[];  // last 20 decisions Apex made
   brief: {
     text: string;
     anchors: [string, string, string];
@@ -64,6 +99,9 @@ export interface ApexState {
     generatedAt: string | null;
     risk?: string;
     todaysMove?: string;
+    todaysMoveWhy?: string;        // why this move matters most today
+    focusItems?: string[];
+    tonightRec?: string;           // single clear evening recommendation
   };
   messages: Array<{ role: "user" | "assistant"; content: string; id: string }>;
   logSheetOpen: boolean;
@@ -78,27 +116,44 @@ export type { DailySnapshot };
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
 const DEFAULT_PROFILE: UserProfile = {
-  name: "Naman",
-  goal: "Lose 15 lbs by August 31, 2026",
+  name: "",
+  goals: [],
+  preferences: [],
+  decisionStyle: "direct",
+  derailers: [],
+  productiveWindows: [],
+  currentPriorities: [],
+  commonDecisionCategories: [],
+  learnedInsights: [],
+  dismissedInsights: [],
+  generatedInsights: [],
+  goal: "Build consistent high-performance habits",
   calorieTarget: 2100,
   proteinTarget: 155,
   stepTarget: 10000,
   units: "imperial",
-  topPriority: "Close the Stripe integration",
-  firstMeeting: "2:00 PM",
+  topPriority: "",
+  firstMeeting: "",
 };
 
 const MOCK_BRIEF = {
-  text: "You've been under-eating all week and your energy is starting to show it. Today is your cleanest morning in days — protect it. The Stripe integration is still the bottleneck, so nothing else matters until that moves. Eat properly, get one deep work block in before noon, and lift light tonight.",
+  text: "Your morning window is your highest-leverage asset today. Protect it before it fills with reactive work and you lose the compound effect of focused effort.",
+  todaysMove: "Lock a 90-minute no-interruption deep work block before noon.",
+  todaysMoveWhy: "This creates more career momentum than anything else on today's schedule.",
+  focusItems: [
+    "Deep work block: your top priority — 90 min before noon",
+    "Gym session — 45 min, keeps the training streak alive",
+    "No non-essential spending today",
+  ],
+  tonightRec: "Stay in, cook dinner, and sleep before midnight.",
   anchors: [
-    "Eat 2,100 cal · hit 155g protein",
-    "First meeting: 2:00 PM",
-    "Log weight after you step off the scale",
+    "Today's priority: your most important work",
+    "Set your energy level above",
+    "Apex is ready to help you decide",
   ] as [string, string, string],
-  chips: ["What should I eat?", "Plan my morning", "Am I on track?"],
+  chips: ["Plan my day", "Should I go out tonight?", "Am I on track?"],
   generatedAt: new Date().toISOString(),
-  risk: "Under-eating is collapsing your afternoon energy. The deficit will hit before 3 PM.",
-  todaysMove: "Eat a real breakfast before you open the laptop.",
+  risk: "Your biggest risk today is losing the afternoon to low-priority errands.",
 };
 
 function makeInitialState(): ApexState {
@@ -114,10 +169,42 @@ function makeInitialState(): ApexState {
     },
     weightHistory: [],
     dailyHistory: [],
+    isOnboarded: false,
+    recentDecisions: [],
     brief: MOCK_BRIEF,
     messages: [],
     logSheetOpen: false,
     logTab: "meal",
+  };
+}
+
+// ─── Migration helper — merges saved state with current shape ─────────────────
+// Safe defaults for any new fields added after user's first session.
+function migrate(saved: Partial<ApexState>): ApexState {
+  const base = makeInitialState();
+  const profile: UserProfile = {
+    ...base.profile,
+    ...saved.profile,
+    // Ensure new V2.x fields exist even for old users
+    goals:                      saved.profile?.goals                      ?? base.profile.goals,
+    preferences:                saved.profile?.preferences                ?? base.profile.preferences,
+    decisionStyle:              saved.profile?.decisionStyle              ?? base.profile.decisionStyle,
+    derailers:                  saved.profile?.derailers                  ?? base.profile.derailers,
+    productiveWindows:          saved.profile?.productiveWindows          ?? base.profile.productiveWindows,
+    currentPriorities:          saved.profile?.currentPriorities          ?? base.profile.currentPriorities,
+    commonDecisionCategories:   saved.profile?.commonDecisionCategories   ?? base.profile.commonDecisionCategories,
+    learnedInsights:            saved.profile?.learnedInsights            ?? base.profile.learnedInsights,
+    dismissedInsights:          saved.profile?.dismissedInsights          ?? base.profile.dismissedInsights,
+    generatedInsights:          saved.profile?.generatedInsights          ?? base.profile.generatedInsights,
+  };
+  return {
+    ...base,
+    ...saved,
+    profile,
+    isOnboarded: saved.isOnboarded ?? false,
+    recentDecisions: saved.recentDecisions ?? [],
+    // Reset today if stale
+    today: saved.today?.date !== todayStr() ? base.today : (saved.today ?? base.today),
   };
 }
 
@@ -130,6 +217,16 @@ type Action =
   | { type: "SET_WORKOUT"; workout: WorkoutLog }
   | { type: "SET_BRIEF"; brief: ApexState["brief"] }
   | { type: "SET_PROFILE"; profile: Partial<UserProfile> }
+  | { type: "SET_GOALS"; goals: string[] }
+  | { type: "COMPLETE_ONBOARDING"; profile: Partial<UserProfile> }
+  | { type: "ADD_LEARNED_INSIGHT"; insight: string }
+  | { type: "SET_DECISION_STYLE"; style: DecisionStyle }
+  | { type: "CONFIRM_INSIGHT"; insight: string }
+  | { type: "DISMISS_INSIGHT"; insight: string }
+  | { type: "EDIT_INSIGHT"; original: string; updated: string }
+  | { type: "ADD_DECISION_RECORD"; record: DecisionRecord }
+  | { type: "SET_DECISION_OUTCOME"; id: string; outcome: DecisionOutcome; reflection?: string }
+  | { type: "ADD_GENERATED_INSIGHTS"; insights: string[] }
   | { type: "ADD_MESSAGE"; message: ApexState["messages"][0] }
   | { type: "SET_MESSAGES"; messages: ApexState["messages"] }
   | { type: "OPEN_LOG_SHEET"; tab?: ApexState["logTab"] }
@@ -186,6 +283,63 @@ function reducer(state: ApexState, action: Action): ApexState {
     case "CLOSE_LOG_SHEET":
       return { ...state, logSheetOpen: false };
 
+    case "SET_GOALS":
+      return { ...state, profile: { ...state.profile, goals: action.goals } };
+
+    case "COMPLETE_ONBOARDING":
+      return { ...state, isOnboarded: true, profile: { ...state.profile, ...action.profile } };
+
+    case "ADD_LEARNED_INSIGHT": {
+      const existing = state.profile.learnedInsights || [];
+      if (existing.includes(action.insight)) return state;
+      return { ...state, profile: { ...state.profile, learnedInsights: [...existing, action.insight].slice(-20) } };
+    }
+
+    case "SET_DECISION_STYLE":
+      return { ...state, profile: { ...state.profile, decisionStyle: action.style } };
+
+    case "CONFIRM_INSIGHT": {
+      const existing = state.profile.learnedInsights || [];
+      if (existing.includes(action.insight)) return state;
+      return { ...state, profile: { ...state.profile, learnedInsights: [...existing, action.insight].slice(-20) } };
+    }
+
+    case "DISMISS_INSIGHT": {
+      const dismissed = state.profile.dismissedInsights || [];
+      if (dismissed.includes(action.insight)) return state;
+      return { ...state, profile: { ...state.profile, dismissedInsights: [...dismissed, action.insight] } };
+    }
+
+    case "EDIT_INSIGHT": {
+      const existing = state.profile.learnedInsights || [];
+      const filtered = existing.filter(i => i !== action.original);
+      return { ...state, profile: { ...state.profile, learnedInsights: [...filtered, action.updated].slice(-20) } };
+    }
+
+    case "ADD_DECISION_RECORD": {
+      const existing = state.recentDecisions || [];
+      return { ...state, recentDecisions: [action.record, ...existing].slice(0, 20) };
+    }
+
+    case "SET_DECISION_OUTCOME": {
+      return {
+        ...state,
+        recentDecisions: (state.recentDecisions || []).map(d =>
+          d.id === action.id
+            ? { ...d, outcome: action.outcome, reflection: action.reflection, reviewedAt: new Date().toISOString() }
+            : d
+        ),
+      };
+    }
+
+    case "ADD_GENERATED_INSIGHTS": {
+      const existing = state.profile.generatedInsights || [];
+      const dismissed = new Set(state.profile.dismissedInsights || []);
+      const confirmed = new Set(state.profile.learnedInsights || []);
+      const truly_new = action.insights.filter(i => !dismissed.has(i) && !confirmed.has(i) && !existing.includes(i));
+      return { ...state, profile: { ...state.profile, generatedInsights: [...existing, ...truly_new].slice(-30) } };
+    }
+
     case "SET_PRIORITY":
       return { ...state, profile: { ...state.profile, topPriority: action.priority } };
 
@@ -241,7 +395,7 @@ export function ApexProvider({ children }: { children: React.ReactNode }) {
           saved.dailyHistory = [...deduped, snapshot].slice(-30);
           saved.today = { ...makeInitialState().today };
         }
-        dispatch({ type: "HYDRATE", state: { ...makeInitialState(), ...saved } });
+        dispatch({ type: "HYDRATE", state: migrate(saved) });
       }
     } catch { /* fresh start */ }
   }, []);
