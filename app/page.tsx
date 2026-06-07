@@ -9,6 +9,7 @@ import { buildContext } from "@/lib/apex/context-builder";
 import { deriveOperatingMode, deriveRisk, deriveTodaysMove } from "@/lib/apex/operating-mode";
 import { getMockBrief } from "@/lib/apex/prompts";
 import { generateCandidateInsights } from "@/lib/apex/learning-engine";
+import { getApexNoticed, getApexWasRight } from "@/lib/apex/relationship";
 import EnergySelector from "@/components/today/EnergySelector";
 import Onboarding from "@/components/Onboarding";
 import type { ApexContext } from "@/lib/apex/context-builder";
@@ -110,13 +111,20 @@ export default function TodayPage() {
     ),
   ];
   const resolved = (state.recentDecisions || []).filter(d => d.outcome);
-  const pastDecisionNote: string | null = (() => {
+
+  // V4: Relationship moments
+  const apexNoticed = getApexNoticed(ctx, state.recentDecisions || []);
+  const apexWasRight = getApexWasRight(state.recentDecisions || []);
+
+  // Display text for memory callout — prefer "Apex Noticed" framing
+  const pastDecisionNote: string | null = apexNoticed ?? (() => {
     if (allInsights.length > 0) return allInsights[allInsights.length - 1];
     if (resolved.length < 2) return null;
     const recentWorked = resolved.slice(0, 5).filter(d => d.outcome === "worked").length;
     if (recentWorked >= 3) return `${recentWorked} of your last ${Math.min(5, resolved.length)} decisions worked well.`;
     return null;
   })();
+  const isApexNoticed = !!apexNoticed;
 
   const needsOnboarding =
     (state.profile.goals || []).length === 0 ||
@@ -215,20 +223,32 @@ export default function TodayPage() {
           </p>
         </div>
 
-        {/* Memory callout */}
+        {/* ── Relationship moment — Apex Noticed / Memory ───────────────── */}
         {pastDecisionNote && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.1, duration: 0.2 }}
-            style={{ marginBottom: 52, paddingLeft: 14, borderLeft: "2px solid rgba(46,204,113,0.2)" }}
+            style={{ marginBottom: 52 }}
           >
-            <p className="font-label" style={{ fontSize: 9, letterSpacing: "0.1em", color: "rgba(46,204,113,0.4)", marginBottom: 6 }}>
-              MEMORY · {resolved.length} DECISION{resolved.length !== 1 ? "S" : ""} REVIEWED
-            </p>
-            <p className="font-body" style={{ fontSize: 13, color: "rgba(216,195,173,0.48)", lineHeight: 1.6, fontStyle: "italic" }}>
-              &ldquo;{pastDecisionNote}&rdquo;
-            </p>
+            <div style={{ paddingLeft: 14, borderLeft: `2px solid ${isApexNoticed ? "rgba(245,158,11,0.22)" : "rgba(46,204,113,0.2)"}` }}>
+              <p className="font-label" style={{ fontSize: 9, letterSpacing: "0.1em", color: isApexNoticed ? "rgba(245,158,11,0.4)" : "rgba(46,204,113,0.4)", marginBottom: 6 }}>
+                {isApexNoticed ? "APEX NOTICED" : `MEMORY · ${resolved.length} DECISION${resolved.length !== 1 ? "S" : ""} REVIEWED`}
+              </p>
+              <p className="font-body" style={{ fontSize: 13, color: "rgba(216,195,173,0.52)", lineHeight: 1.65 }}>
+                {pastDecisionNote}
+              </p>
+            </div>
+            {apexWasRight && (
+              <div style={{ marginTop: 12, paddingLeft: 14 }}>
+                <p className="font-label" style={{ fontSize: 9, letterSpacing: "0.1em", color: "rgba(245,158,11,0.3)", marginBottom: 4 }}>
+                  APEX WAS RIGHT
+                </p>
+                <p className="font-body" style={{ fontSize: 12, color: "rgba(216,195,173,0.35)", lineHeight: 1.55 }}>
+                  {apexWasRight.text}
+                </p>
+              </div>
+            )}
           </motion.div>
         )}
 

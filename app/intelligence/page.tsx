@@ -12,6 +12,14 @@ import {
   computeDecisionStats,
   getPendingFollowUps,
 } from "@/lib/apex/learning-engine";
+import {
+  getIntelligenceStage,
+  getApexLearned,
+  getWhatChangedRecently,
+  getRelationshipTimeline,
+  getDecisionLearning,
+} from "@/lib/apex/relationship";
+import type { RelationshipMilestone } from "@/lib/apex/relationship";
 
 // ─── Pattern → insight ────────────────────────────────────────────────────────
 
@@ -181,6 +189,12 @@ export default function MePage() {
   const confirmedInsights = profile.learnedInsights || [];
   const hasGoals = (profile.goals || []).length > 0;
 
+  // V4: Relationship intelligence
+  const stage = getIntelligenceStage(stats.total, confirmedInsights.length, daysOfData);
+  const apexLearned = getApexLearned(confirmedInsights, decisions);
+  const whatChanged = getWhatChangedRecently(decisions, confirmedInsights);
+  const timeline = getRelationshipTimeline(decisions, confirmedInsights);
+
   // Narrative intelligence summary
   const intelligenceSummary = (() => {
     if (stats.total === 0 && confirmedInsights.length === 0 && daysOfData < 3) {
@@ -271,6 +285,24 @@ export default function MePage() {
             {profile.name ? profile.name.toUpperCase() + "." : "YOU."}
           </h1>
 
+          {/* Progressive stage badge */}
+          <div style={{ marginBottom: 16, paddingLeft: 4 }}>
+            <span
+              className="font-label"
+              style={{
+                fontSize: 9,
+                letterSpacing: "0.14em",
+                color: stage === "Trusted" ? "rgba(46,204,113,0.55)"
+                  : stage === "Personalizing" ? "rgba(245,158,11,0.55)"
+                  : stage === "Understanding" ? "rgba(245,158,11,0.4)"
+                  : "rgba(216,195,173,0.28)",
+                display: "inline-block",
+              }}
+            >
+              {stage.toUpperCase()}
+            </span>
+          </div>
+
           {/* Identity statement */}
           <div style={{ paddingLeft: 4 }}>
             <p className="font-body" style={{ fontSize: 16, color: "rgba(216,195,173,0.5)", lineHeight: 1.6, marginBottom: 4 }}>
@@ -330,6 +362,47 @@ export default function MePage() {
             </p>
           )}
         </motion.div>
+
+        {/* ── Apex Learned ────────────────────────────────────────────────── */}
+        {apexLearned && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.08, duration: 0.2 }}
+            style={{
+              marginBottom: 40,
+              paddingLeft: 14,
+              borderLeft: "2px solid rgba(245,158,11,0.2)",
+            }}
+          >
+            <p className="font-label" style={{ fontSize: 9, letterSpacing: "0.12em", color: "rgba(245,158,11,0.4)", marginBottom: 6 }}>
+              APEX LEARNED
+            </p>
+            <p className="font-body" style={{ fontSize: 14, color: "rgba(216,195,173,0.55)", lineHeight: 1.65 }}>
+              {apexLearned}
+            </p>
+          </motion.div>
+        )}
+
+        {/* ── What Changed Recently ────────────────────────────────────────── */}
+        {whatChanged.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.1, duration: 0.2 }}
+            style={{ marginBottom: 52 }}
+          >
+            <p className="font-label" style={{ fontSize: 9, letterSpacing: "0.14em", color: "rgba(216,195,173,0.22)", marginBottom: 14 }}>
+              WHAT CHANGED RECENTLY
+            </p>
+            {whatChanged.map((change, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
+                <div style={{ width: 3, height: 3, borderRadius: "50%", background: "rgba(245,158,11,0.3)", flexShrink: 0, marginTop: 7 }} />
+                <p className="font-body" style={{ fontSize: 14, color: "rgba(216,195,173,0.45)", lineHeight: 1.55 }}>{change}</p>
+              </div>
+            ))}
+          </motion.div>
+        )}
 
         {/* ── Decisions awaiting review ────────────────────────────────────── */}
         {pendingFollowUps.length > 0 && (
@@ -445,6 +518,45 @@ export default function MePage() {
           </div>
         )}
 
+        {/* ── Relationship Timeline ────────────────────────────────────────── */}
+        <div style={{ marginBottom: 52 }}>
+          <p className="font-label" style={{ fontSize: 9, letterSpacing: "0.14em", color: "rgba(216,195,173,0.22)", marginBottom: 18 }}>
+            YOUR RELATIONSHIP WITH APEX
+          </p>
+          {timeline.map((milestone: RelationshipMilestone, i) => (
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 14,
+                marginBottom: i < timeline.length - 1 ? 16 : 0,
+                opacity: milestone.reached ? 1 : 0.35,
+              }}
+            >
+              <div style={{ flexShrink: 0, paddingTop: 3 }}>
+                {milestone.reached ? (
+                  <div style={{ width: 10, height: 10, borderRadius: "50%", background: "rgba(46,204,113,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#060606" }} />
+                  </div>
+                ) : (
+                  <div style={{ width: 10, height: 10, borderRadius: "50%", border: "1px solid rgba(216,195,173,0.2)" }} />
+                )}
+              </div>
+              <div>
+                <p className="font-body" style={{ fontSize: 14, color: milestone.reached ? "#e3e2e7" : "rgba(216,195,173,0.4)", lineHeight: 1.3, marginBottom: 2 }}>
+                  {milestone.label}
+                </p>
+                {milestone.reached && (
+                  <p className="font-body" style={{ fontSize: 12, color: "rgba(216,195,173,0.3)", lineHeight: 1.4 }}>
+                    {milestone.description}
+                  </p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
         {/* ── Goals ───────────────────────────────────────────────────────── */}
         <div style={{ marginBottom: 52 }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16 }}>
@@ -507,31 +619,41 @@ export default function MePage() {
               const outcomeColors: Record<string, string> = { worked: "#2ecc71", mixed: "#ffc174", did_not_work: "#ff5c5c" };
               const outcomeLabels: Record<string, string> = { worked: "Worked", mixed: "Mixed", did_not_work: "Didn't" };
               const date = new Date(record.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+              const learning = getDecisionLearning(record);
               return (
-                <div key={record.id} style={{ paddingBottom: 12, marginBottom: 12, borderBottom: "1px solid rgba(255,255,255,0.04)", display: "flex", alignItems: "flex-start", gap: 10 }}>
-                  <div style={{ flex: 1 }}>
-                    <p className="font-body" style={{ fontSize: 13, color: "rgba(216,195,173,0.35)", lineHeight: 1.35, marginBottom: 2 }}>
-                      {record.question.slice(0, 58)}{record.question.length > 58 ? "…" : ""}
-                    </p>
-                    <p className="font-body" style={{ fontSize: 14, color: "#e3e2e7", lineHeight: 1.35 }}>
-                      → {record.recommendation.slice(0, 58)}{record.recommendation.length > 58 ? "…" : ""}
-                    </p>
-                    {record.reflection && (
-                      <p className="font-body" style={{ fontSize: 12, color: "rgba(216,195,173,0.28)", marginTop: 3, fontStyle: "italic" }}>
-                        &ldquo;{record.reflection.slice(0, 50)}&rdquo;
+                <div key={record.id} style={{ paddingBottom: 16, marginBottom: 16, borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <p className="font-body" style={{ fontSize: 12, color: "rgba(216,195,173,0.32)", lineHeight: 1.35, marginBottom: 3 }}>
+                        {record.question.slice(0, 62)}{record.question.length > 62 ? "…" : ""}
                       </p>
-                    )}
-                  </div>
-                  <div style={{ flexShrink: 0, textAlign: "right", minWidth: 44 }}>
-                    <p className="font-label" style={{ fontSize: 9, color: "rgba(216,195,173,0.18)", marginBottom: 3 }}>{date}</p>
-                    {record.outcome ? (
-                      <p className="font-label" style={{ fontSize: 10, letterSpacing: "0.04em", color: outcomeColors[record.outcome] || "rgba(216,195,173,0.35)" }}>
-                        {outcomeLabels[record.outcome] || record.outcome}
+                      <p className="font-body" style={{ fontSize: 14, color: "#e3e2e7", lineHeight: 1.35 }}>
+                        → {record.recommendation.slice(0, 62)}{record.recommendation.length > 62 ? "…" : ""}
                       </p>
-                    ) : (
-                      <p className="font-label" style={{ fontSize: 9, color: "rgba(216,195,173,0.15)" }}>pending</p>
-                    )}
+                    </div>
+                    <div style={{ flexShrink: 0, textAlign: "right", minWidth: 44 }}>
+                      <p className="font-label" style={{ fontSize: 9, color: "rgba(216,195,173,0.18)", marginBottom: 3 }}>{date}</p>
+                      {record.outcome ? (
+                        <p className="font-label" style={{ fontSize: 10, letterSpacing: "0.04em", color: outcomeColors[record.outcome] || "rgba(216,195,173,0.35)" }}>
+                          {outcomeLabels[record.outcome] || record.outcome}
+                        </p>
+                      ) : (
+                        <p className="font-label" style={{ fontSize: 9, color: "rgba(216,195,173,0.15)" }}>pending</p>
+                      )}
+                    </div>
                   </div>
+                  {/* What Apex learned from this decision */}
+                  {learning && (
+                    <div style={{ marginTop: 6, paddingLeft: 0, display: "flex", alignItems: "baseline", gap: 6 }}>
+                      <span className="font-label" style={{ fontSize: 9, letterSpacing: "0.08em", color: "rgba(245,158,11,0.32)", flexShrink: 0 }}>APEX LEARNED</span>
+                      <p className="font-body" style={{ fontSize: 12, color: "rgba(216,195,173,0.28)", lineHeight: 1.45 }}>{learning}</p>
+                    </div>
+                  )}
+                  {record.reflection && (
+                    <p className="font-body" style={{ fontSize: 12, color: "rgba(216,195,173,0.25)", marginTop: 4, fontStyle: "italic" }}>
+                      &ldquo;{record.reflection.slice(0, 60)}&rdquo;
+                    </p>
+                  )}
                 </div>
               );
             })}
